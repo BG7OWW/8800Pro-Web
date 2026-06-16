@@ -10,6 +10,7 @@ export class WebBluetoothTransport implements RadioTransport {
   private packetSize = 20
   private interChunkDelayMs = 25
   private writeMode: 'with-response' | 'without-response' = 'with-response'
+  private connected = false
   private readonly fallbackPacketSizes = [244, 185, 128, 64, 32, 20]
 
   static isSupported() {
@@ -28,6 +29,7 @@ export class WebBluetoothTransport implements RadioTransport {
     this.characteristic = await service.getCharacteristic(SHX8800PRO.bluetoothCharacteristic)
     await this.characteristic.startNotifications()
     this.characteristic.addEventListener('characteristicvaluechanged', this.handleChanged)
+    this.connected = true
   }
 
   async close() {
@@ -36,6 +38,12 @@ export class WebBluetoothTransport implements RadioTransport {
       await this.characteristic.stopNotifications().catch(() => undefined)
     }
     this.device?.gatt?.disconnect()
+    this.connected = false
+    this.queue.clear()
+  }
+
+  isConnected() {
+    return this.connected && Boolean((this.device?.gatt as BluetoothRemoteGATTServer & { connected?: boolean } | undefined)?.connected) && Boolean(this.characteristic)
   }
 
   async write(data: Uint8Array) {
@@ -103,6 +111,7 @@ export class WebBluetoothTransport implements RadioTransport {
     if (!value) return
     this.queue.push(new Uint8Array(value.buffer.slice(value.byteOffset, value.byteOffset + value.byteLength)))
   }
+
 }
 
 function sleep(ms: number) {

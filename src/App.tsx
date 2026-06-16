@@ -23,7 +23,7 @@ import {
   Upload,
   Waves,
 } from 'lucide-react'
-import { useEffect, useMemo, useRef, useState, type ChangeEvent, type ReactNode } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState, type ChangeEvent, type ReactNode } from 'react'
 import './App.css'
 import hamLogo from './assets/ham-logo.png'
 import { CHANNEL_CHOICES, DTMF_CHOICES, FUNCTION_CHOICES, TONE_CHOICES, VFO_CHOICES } from './core/constants/choices'
@@ -69,6 +69,7 @@ function App() {
   const [notice, setNotice] = useState<{ tone: 'idle' | 'ok' | 'warn'; text: string } | null>(null)
   const [channelEditorResetKey, setChannelEditorResetKey] = useState(0)
   const abortRef = useRef<AbortController | null>(null)
+  const showBeian = import.meta.env.MODE === 'server'
 
   useEffect(() => {
     void refreshBackups()
@@ -100,9 +101,32 @@ function App() {
     setBackups(await listBackups())
   }
 
-  function addLog(line: string) {
+  const addLog = useCallback((line: string) => {
     setLogs((current) => [`${new Date().toLocaleTimeString()}  ${line}`, ...current].slice(0, 300))
-  }
+  }, [])
+
+  useEffect(() => {
+    if (!transport) return
+    let cancelled = false
+
+    const syncConnection = () => {
+      if (cancelled || !transport) return
+      if (transport.isConnected()) return
+      abortRef.current?.abort()
+      setBusy(false)
+      setProgress(null)
+      setTransport(null)
+      setNotice({ tone: 'warn', text: '设备断开连接，当前状态已切换为未连接。' })
+      addLog('设备断开连接，已切换为未连接')
+    }
+
+    syncConnection()
+    const timer = window.setInterval(syncConnection, 1000)
+    return () => {
+      cancelled = true
+      window.clearInterval(timer)
+    }
+  }, [transport, addLog])
 
   async function connectSerial() {
     await withBusy(async () => {
@@ -261,6 +285,17 @@ function App() {
             <strong>BG7OWW</strong>
             <SquareArrowOutUpRight size={16} />
           </button>
+          {showBeian ? (
+            <div className="beian-links">
+              <a href="https://beian.miit.gov.cn/" rel="noreferrer" target="_blank">
+                <span>粤ICP备2023143201号</span>
+              </a>
+              <a href="https://beian.mps.gov.cn/#/query/webSearch?code=44011302005027" rel="noreferrer" target="_blank">
+                <img src="https://img.743.world/i/2026/03/25/124l7ch.webp" alt="公安备案图标" />
+                <span>粤公网安备44011302005027号</span>
+              </a>
+            </div>
+          ) : null}
         </div>
       </aside>
 
@@ -376,9 +411,10 @@ function StatusRail({
   backupCount: number
 }) {
   const availableLinks = [stats.serialSupported ? 'USB' : '', stats.bluetoothSupported ? '蓝牙' : ''].filter(Boolean).join(' / ') || '当前浏览器不支持'
+  const deviceLabel = transport ? (transport.isConnected() ? transport.label : '设备断开') : '未连接'
   return (
     <section className="status-rail">
-      <Metric label="设备" value={transport ? transport.label : '未连接'} tone={transport ? 'ok' : 'idle'} />
+      <Metric label="设备" value={deviceLabel} tone={transport ? (transport.isConnected() ? 'ok' : 'warn') : 'idle'} />
       <Metric label="已启用信道" value={`${stats.visibleChannels}/512`} />
       <Metric label="本地备份" value={`${backupCount} 份`} />
       <Metric label="可连接方式" value={availableLinks} />
@@ -392,7 +428,7 @@ function StatusRail({
   )
 }
 
-function Metric({ label, value, tone = 'idle' }: { label: string; value: string; tone?: 'ok' | 'idle' }) {
+function Metric({ label, value, tone = 'idle' }: { label: string; value: string; tone?: 'ok' | 'idle' | 'warn' }) {
   return (
     <div className={`metric ${tone}`}>
       <span>{label}</span>
@@ -518,7 +554,7 @@ function Dashboard({
           </button>
         </div>
         <div className="summary-list compact-list dashboard-footer-list">
-          <span>当前链路 <strong>{transport?.kind === 'bluetooth' ? '蓝牙' : transport?.kind === 'serial' ? 'USB' : '未连接'}</strong></span>
+          <span>当前链路 <strong>{transport ? (transport.isConnected() ? (transport.kind === 'bluetooth' ? '蓝牙' : 'USB') : '设备断开') : '未连接'}</strong></span>
           <span>机器默认打开 <strong>{stats.activeBankSummary}</strong></span>
         </div>
       </section>
@@ -1556,30 +1592,34 @@ function GuidePanel({ setActiveView }: { setActiveView: (view: ViewId) => void }
 
 function AboutPanel() {
   return (
-    <div className="feature-grid guide-layout">
-      <section className="panel about-panel">
-        <h3>关于</h3>
-        <p></p>
-        <div className="about-copy">
-          <p>本项目由BG7OWW制作，旨在通过方便访问的网页让各位HAM们更加方便的操作森海克斯8800Pro的各项功能，部分功能实现来自Github上的开源项目</p>
-          <p>如果有任何问题，请联系微信：samaaw1012</p>
+    <section className="panel about-panel">
+      <h3>关于</h3>
+      <div className="about-copy">
+        <p>本项目由BG7OWW制作，旨在通过方便访问的网页让各位HAM们更加方便的操作森海克斯8800Pro的各项功能，部分功能实现来自Github上的开源项目</p>
+        <p>如果有任何问题，请联系微信：samaaw1012</p>
 
-          <h4>免责声明</h4>
-          <p>本软件仅供技术交流和个人学习使用。任何个人或组织在使用本软件时必须遵守中华人民共和国相关法律法规及无线电管理条例。</p>
-          <p>如因使用本软件造成任何损失，包括但不限于数据丢失或设备损坏，作者不承担任何法律责任。数据无价，提醒您注意备份！</p>
-          <p>通过下载、安装或使用此软件，您即表示已阅读、理解并同意受项目免责声明的约束。</p>
+        <h4>免责声明</h4>
+        <p>本软件仅供技术交流和个人学习使用。任何个人或组织在使用本软件时必须遵守中华人民共和国相关法律法规及无线电管理条例。</p>
+        <p>如因使用本软件造成任何损失，包括但不限于数据丢失或设备损坏，作者不承担任何法律责任。数据无价，提醒您注意备份！</p>
+        <p>通过下载、安装或使用此软件，您即表示已阅读、理解并同意受项目免责声明的约束。</p>
 
-          <h4>致谢</h4>
-          <p>森海克斯官方写频软件</p>
-          <p>
-            部分功能的实现离不开
-            <a href="https://github.com/SydneyOwl/senhaix-freq-writer-enhanced" rel="noreferrer" target="_blank">
-              SydneyOwl/senhaix-freq-writer-enhanced
-            </a>
-          </p>
+        <h4>致谢</h4>
+        <p>森海克斯官方写频软件</p>
+        <p>
+          部分功能的实现离不开
+          <a href="https://github.com/SydneyOwl/senhaix-freq-writer-enhanced" rel="noreferrer" target="_blank">
+            SydneyOwl/senhaix-freq-writer-enhanced
+          </a>
+        </p>
+
+        <h4>更新日志</h4>
+        <div className="changelog">
+          <p><strong>实时连接监测</strong> 设备断开后会自动切换成未连接状态，并在页面里直接提示。</p>
+          <p><strong>关于页整理</strong> 把项目说明、免责声明、致谢和更新日志放到同一个文字页面里，便于查看。</p>
+          <p><strong>部署分流</strong> 服务器版本保留备案号，GitHub Pages 版本默认不显示备案号，避免不同发布场景混在一起。</p>
         </div>
-      </section>
-    </div>
+      </div>
+    </section>
   )
 }
 

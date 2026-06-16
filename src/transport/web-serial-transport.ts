@@ -8,6 +8,7 @@ export class WebSerialTransport implements RadioTransport {
   private writer?: WritableStreamDefaultWriter<Uint8Array>
   private queue = new ByteQueue()
   private abort = false
+  private connected = false
   private readonly options: SerialOptions = {
     baudRate: 115200,
     dataBits: 8,
@@ -28,6 +29,7 @@ export class WebSerialTransport implements RadioTransport {
 
   async close() {
     this.abort = true
+    this.connected = false
     try {
       await this.reader?.cancel()
       this.reader?.releaseLock()
@@ -45,6 +47,7 @@ export class WebSerialTransport implements RadioTransport {
   async reopen() {
     if (!this.port) throw new Error('串口未连接')
     this.abort = true
+    this.connected = false
     try {
       await this.reader?.cancel()
       this.reader?.releaseLock()
@@ -60,6 +63,10 @@ export class WebSerialTransport implements RadioTransport {
     await sleep(160)
     await this.openCurrentPort()
     this.queue.clear()
+  }
+
+  isConnected() {
+    return this.connected && Boolean(this.port?.readable) && Boolean(this.port?.writable)
   }
 
   async write(data: Uint8Array) {
@@ -82,6 +89,7 @@ export class WebSerialTransport implements RadioTransport {
         if (done) break
         if (value) this.queue.push(value)
       } catch {
+        this.connected = false
         if (!this.abort) break
       }
     }
@@ -94,6 +102,7 @@ export class WebSerialTransport implements RadioTransport {
     this.writer = this.port.writable?.getWriter()
     this.reader = this.port.readable?.getReader()
     this.abort = false
+    this.connected = true
     void this.readLoop()
     await sleep(120)
   }

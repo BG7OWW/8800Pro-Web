@@ -6,6 +6,7 @@
   "scripts": {
     "dev": "vite",
     "build": "tsc -b && vite build",
+    "build:server": "tsc -b && vite build --mode server",
     "lint": "eslint .",
     "preview": "vite preview",
     "test": "tsx tests/protocol.test.ts"

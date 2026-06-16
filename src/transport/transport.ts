@@ -3,6 +3,7 @@ export interface RadioTransport {
   readonly label: string
   open(): Promise<void>
   close(): Promise<void>
+  isConnected(): boolean
   write(data: Uint8Array): Promise<void>
   read(length: number, timeoutMs?: number): Promise<Uint8Array>
   drain?(): void

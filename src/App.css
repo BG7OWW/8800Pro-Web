@@ -393,6 +393,10 @@
   color: var(--ok);
 }
 
+.metric.warn strong {
+  color: var(--warn);
+}
+
 .progress-card {
   padding: 14px;
 }
@@ -1308,6 +1312,23 @@
   color: var(--primary);
   text-decoration: none;
   word-break: break-word;
+}
+
+.changelog {
+  display: grid;
+  gap: 12px;
+  margin-top: 4px;
+}
+
+.changelog p {
+  margin-bottom: 0;
+}
+
+.changelog strong {
+  display: block;
+  margin-bottom: 4px;
+  font-size: 14px;
+  line-height: 1.2;
 }
 
 .backup-list {
