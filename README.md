@@ -1,29 +1,18 @@
-# 8800Pro Web
+本项目由BG7OWW制作，旨在通过方便访问的网页让各位HAM们更加方便的操作森海克斯8800Pro的各项功能，部分功能实现来自Github上的开源项目
+目前已经上传到Github，任何人都可以通过github pages部署本项目并使用
 
-Web programmer for the Senhaix 8800Pro, built with React, Vite, and TypeScript.
 
-## Features
+如果有任何问题，请联系微信：samaaw1012
 
-- Read and write channels, settings, and boot image data
-- USB serial and Bluetooth Low Energy support
-- New-user friendly workflow with guided pages and inline help
-- GitHub Pages friendly build with relative asset paths
+免责声明
+本软件仅供技术交流和个人学习使用。任何个人或组织在使用本软件时必须遵守中华人民共和国相关法律法规及无线电管理条例。
 
-## Local development
+如因使用本软件造成任何损失，包括但不限于数据丢失或设备损坏，作者不承担任何法律责任。数据无价，提醒您注意备份！
 
-```bash
-pnpm install
-pnpm dev
-```
+通过下载、安装或使用此软件，您即表示已阅读、理解并同意受项目免责声明的约束。
 
-## Build
+致谢
 
-```bash
-pnpm build
-```
+森海克斯官方写频软件
 
-## GitHub Pages
-
-This repository includes a GitHub Actions workflow at `.github/workflows/deploy-pages.yml`.
-To deploy the site on GitHub Pages, enable Pages for the repository and set the source to GitHub Actions.
-
+部分功能的实现离不开SydneyOwl/senhaix-freq-writer-enhanced
