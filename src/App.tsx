@@ -261,15 +261,6 @@ function App() {
             <strong>BG7OWW</strong>
             <SquareArrowOutUpRight size={16} />
           </button>
-          <div className="beian-links">
-            <a href="https://beian.miit.gov.cn/" rel="noreferrer" target="_blank">
-              <span>粤ICP备2023143201号</span>
-            </a>
-            <a href="https://beian.mps.gov.cn/#/query/webSearch?code=44011302005027" rel="noreferrer" target="_blank">
-              <img src="https://img.743.world/i/2026/03/25/124l7ch.webp" alt="公安备案图标" />
-              <span>粤公网安备44011302005027号</span>
-            </a>
-          </div>
         </div>
       </aside>
 
