@@ -22,7 +22,7 @@ export function encodeBlockForAddress(data: AppData, address: number) {
     const hasRaw = hasRawBlock(data, address)
     const payload = getBasePayload(data, address, 0xff)
     const firstChannelIndex = Math.floor(address / 64) * 2
-    payload.set(encodeChannel(data.channels[Math.floor(firstChannelIndex / 64)][firstChannelIndex % 64], payload.slice(0, 32), hasRaw), 0)
+    payload.set(encodeChannel(data.channels[Math.floor(firstChannelIndex / 64)][firstChannelIndex % 64], payload.slice(0, 32), hasRaw, address), 0)
     payload.set(encodeChannel(data.channels[Math.floor((firstChannelIndex + 1) / 64)][(firstChannelIndex + 1) % 64], payload.slice(32, 64), hasRaw), 32)
     return payload
   }
@@ -105,7 +105,7 @@ export function applyBlockToAppData(data: AppData, address: number, frame: Uint8
   data.rawBlocks[toBlockKey(address)] = Array.from(payload)
   if (address < 0x4000) {
     const firstChannelIndex = Math.floor(address / 64) * 2
-    setChannelByFlatIndex(data, firstChannelIndex, decodeChannel(payload.slice(0, 32), (firstChannelIndex % 64) + 1))
+    setChannelByFlatIndex(data, firstChannelIndex, decodeChannel(payload.slice(0, 32), (firstChannelIndex % 64) + 1, address))
     setChannelByFlatIndex(data, firstChannelIndex + 1, decodeChannel(payload.slice(32, 64), ((firstChannelIndex + 1) % 64) + 1))
     return
   }
@@ -202,8 +202,8 @@ function toBlockKey(address: number) {
   return address.toString(16).toUpperCase().padStart(4, '0')
 }
 
-function encodeChannel(channel: Channel, base?: Uint8Array, preserveUnknownFlags = Boolean(base)) {
-  const baseIsUsable = Boolean(base) && !isBleFrameHeaderPollutedChannel(base!)
+function encodeChannel(channel: Channel, base?: Uint8Array, preserveUnknownFlags = Boolean(base), blockAddress?: number) {
+  const baseIsUsable = Boolean(base) && !isBleFrameHeaderPollutedChannel(base!, blockAddress)
   const payload = baseIsUsable && base ? new Uint8Array(base) : new Uint8Array(32)
   if (!baseIsUsable) payload.fill(0xff)
   if (!channel.rxFreq) return new Uint8Array(32).fill(0xff)
@@ -219,8 +219,8 @@ function encodeChannel(channel: Channel, base?: Uint8Array, preserveUnknownFlags
   return payload
 }
 
-function decodeChannel(payload: Uint8Array, id: number): Channel {
-  if (payload[0] === 0xff || payload[1] === 0xff || payload[3] === 0 || isBleFrameHeaderPollutedChannel(payload)) return createEmptyChannel(id)
+function decodeChannel(payload: Uint8Array, id: number, blockAddress?: number): Channel {
+  if (payload[0] === 0xff || payload[1] === 0xff || payload[3] === 0 || isBleFrameHeaderPollutedChannel(payload, blockAddress)) return createEmptyChannel(id)
   const name = payload[20] !== 0xff ? decodeRadioText(payload, 20, 12) : ''
   return {
     id,
@@ -239,8 +239,15 @@ function decodeChannel(payload: Uint8Array, id: number): Channel {
   }
 }
 
-function isBleFrameHeaderPollutedChannel(payload: Uint8Array) {
-  return payload.length >= 4 && payload[0] === 0x57 && payload[3] === 0x40
+function isBleFrameHeaderPollutedChannel(payload: Uint8Array, blockAddress?: number) {
+  return (
+    blockAddress !== undefined &&
+    payload.length >= 4 &&
+    payload[0] === 0x57 &&
+    payload[1] === ((blockAddress >> 8) & 0xff) &&
+    payload[2] === (blockAddress & 0xff) &&
+    payload[3] === 0x40
+  )
 }
 
 function setChannelByFlatIndex(data: AppData, flatIndex: number, channel: Channel) {

@@ -78,11 +78,16 @@ assert.deepEqual(Array.from(encodeBlockForAddress(zeroEmptyChannelData, 0x0880))
 const pollutedChannelData = createDefaultAppData()
 const pollutedChannelBlock = new Uint8Array(64).fill(0xff)
 pollutedChannelBlock.set([0x57, 0x06, 0x40, 0x40], 0)
-pollutedChannelBlock.set([0x57, 0x06, 0x80, 0x40], 32)
 applyBlockToAppData(pollutedChannelData, 0x0640, pollutedChannelBlock)
 assert.equal(pollutedChannelData.channels[0][50].visible, false)
 assert.equal(pollutedChannelData.channels[0][51].visible, false)
 assert.deepEqual(Array.from(encodeBlockForAddress(pollutedChannelData, 0x0640)), Array.from(new Uint8Array(64).fill(0xff)))
+
+const headerLikeFrequencyData = createDefaultAppData()
+const headerLikeFrequencyBlock = new Uint8Array(64).fill(0xff)
+headerLikeFrequencyBlock.set([0x57, 0x06, 0x40, 0x40], 0)
+applyBlockToAppData(headerLikeFrequencyData, 0x0600, headerLikeFrequencyBlock)
+assert.equal(headerLikeFrequencyData.channels[0][48].rxFreq, '404.00657')
 
 const newChannelWithoutRaw = createDefaultAppData()
 newChannelWithoutRaw.channels[0][0] = {
