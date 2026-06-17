@@ -7,11 +7,11 @@ export class WebBluetoothTransport implements RadioTransport {
   private device?: BluetoothDevice
   private characteristic?: BluetoothRemoteGATTCharacteristic
   private queue = new ByteQueue()
-  private packetSize = 20
-  private interChunkDelayMs = 25
+  private packetSize = 18
+  private interChunkDelayMs = 20
   private writeMode: 'with-response' | 'without-response' = 'with-response'
   private connected = false
-  private readonly fallbackPacketSizes = [244, 185, 128, 64, 32, 20]
+  private readonly fallbackPacketSizes = [244, 185, 128, 64, 32, 20, 18, 16, 12, 8]
 
   static isSupported() {
     return 'bluetooth' in navigator
@@ -20,7 +20,7 @@ export class WebBluetoothTransport implements RadioTransport {
   async open() {
     if (!WebBluetoothTransport.isSupported()) throw new Error('当前浏览器不支持 Web Bluetooth，请使用桌面 Chrome 或 Edge。')
     this.device = await navigator.bluetooth.requestDevice({
-      filters: [{ name: SHX8800PRO.bluetoothName }],
+      filters: [{ name: SHX8800PRO.bluetoothName }, { services: [SHX8800PRO.bluetoothService] }],
       optionalServices: [SHX8800PRO.bluetoothService],
     })
     const server = await this.device.gatt?.connect()
@@ -59,7 +59,7 @@ export class WebBluetoothTransport implements RadioTransport {
         if (!reduced) throw error
         continue
       }
-      await sleep(this.interChunkDelayMs)
+      if (this.interChunkDelayMs > 0) await sleep(this.interChunkDelayMs)
     }
   }
 
@@ -72,7 +72,7 @@ export class WebBluetoothTransport implements RadioTransport {
   }
 
   setPacketSize(size: number) {
-    this.packetSize = Math.max(20, Math.min(244, size))
+    this.packetSize = Math.max(1, Math.min(4096, size))
   }
 
   getPacketSize() {
@@ -87,16 +87,28 @@ export class WebBluetoothTransport implements RadioTransport {
 
   private async writeChunk(chunk: Uint8Array) {
     if (!this.characteristic) throw new Error('蓝牙未连接')
+    await this.writeCharacteristic(this.characteristic, chunk, this.writeMode)
+  }
+
+  private async writeCharacteristic(
+    characteristic: BluetoothRemoteGATTCharacteristic,
+    chunk: Uint8Array,
+    mode: 'with-response' | 'without-response',
+  ) {
     const value = toBufferSource(chunk)
-    if (this.writeMode === 'without-response' && this.characteristic.writeValueWithoutResponse) {
-      await this.characteristic.writeValueWithoutResponse(value)
+    if (mode === 'without-response' && characteristic.writeValueWithoutResponse) {
+      await characteristic.writeValueWithoutResponse(value)
       return
     }
-    if (this.characteristic.writeValueWithResponse) {
-      await this.characteristic.writeValueWithResponse(value)
+    if (characteristic.writeValueWithResponse) {
+      await characteristic.writeValueWithResponse(value)
       return
     }
-    await this.characteristic.writeValue(value)
+    if (characteristic.writeValueWithoutResponse) {
+      await characteristic.writeValueWithoutResponse(value)
+      return
+    }
+    await characteristic.writeValue(value)
   }
 
   private reducePacketSize() {

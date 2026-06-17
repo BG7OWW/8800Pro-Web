@@ -139,6 +139,72 @@ assert.equal(noisyRead.channels[1][0].rxFreq, '439.46250')
 assert.equal(noisyRead.channels[1][0].name, '深圳梧桐山')
 assert.equal(getShx8800ProReadWriteAddresses().includes(0x0800), true)
 
+class BluetoothWriteTransport implements RadioTransport {
+  readonly kind = 'bluetooth' as const
+  readonly label = 'ble-write'
+  readonly writes: Uint8Array[] = []
+  readonly configs: Array<{ packetSize?: number; writeMode?: 'with-response' | 'without-response'; interChunkDelayMs?: number }> = []
+  private queue: number[] = []
+  private writeFrameCount = 0
+
+  async open() {}
+  async close() {}
+  drain() {
+    this.queue = []
+  }
+  configure(options: { packetSize?: number; writeMode?: 'with-response' | 'without-response'; interChunkDelayMs?: number }) {
+    this.configs.push(options)
+  }
+
+  async write(data: Uint8Array) {
+    this.writes.push(new Uint8Array(data))
+    const text = new TextDecoder('ascii').decode(data)
+    if (text === 'PROGRAMSHXPU') {
+      this.queue.push(0x06)
+      return
+    }
+    if (data.length === 1 && data[0] === 0x46) {
+      this.queue.push(...Array.from(new Uint8Array([0x01, 0x36, 0x01, 0x74, 0x04, 0x00, 0x05, 0x20, 0x02, 0x00, 0x02, 0x60, 0x00, 0x03, 0x50, 0x04])))
+      return
+    }
+    if (data[0] === 0x57) {
+      this.writeFrameCount += 1
+      if (this.writeFrameCount % 2 === 0) this.queue.push(0x06)
+      return
+    }
+    if (data.length === 1 && data[0] === 0x45) this.queue.push(0x06)
+  }
+
+  async read(length: number, timeoutMs = 1000) {
+    const started = Date.now()
+    while (this.queue.length < length) {
+      if (Date.now() - started > timeoutMs) throw new Error('timeout')
+      await new Promise((resolve) => setTimeout(resolve, 1))
+    }
+    return new Uint8Array(this.queue.splice(0, length))
+  }
+}
+
+const bluetoothWriteTransport = new BluetoothWriteTransport()
+const bluetoothWriteData = createDefaultAppData()
+bluetoothWriteData.channels[0][0] = {
+  ...bluetoothWriteData.channels[0][0],
+  visible: true,
+  rxFreq: '145.50000',
+  txFreq: '435.50000',
+  name: 'BLE-1',
+}
+const blePayload = encodeBlockForAddress(bluetoothWriteData, 0)
+await new Shx8800ProSession(bluetoothWriteTransport).writeRadio(bluetoothWriteData)
+const bleWrites = bluetoothWriteTransport.writes.filter((write) => write[0] === 0x57)
+assert.equal(bleWrites.length, getShx8800ProReadWriteAddresses().length)
+assert.equal(bleWrites[0].length, 68)
+assert.equal(bleWrites[1].length, 68)
+assert.deepEqual(Array.from(bleWrites[0].slice(0, 4)), [0x57, 0x00, 0x00, 0x40])
+assert.deepEqual(Array.from(bleWrites[1].slice(0, 4)), [0x57, 0x00, 0x40, 0x40])
+assert.deepEqual(Array.from(bleWrites[0].slice(4)), Array.from(blePayload))
+assert.equal(bluetoothWriteTransport.configs.some((config) => config.packetSize === 18 && config.writeMode === 'with-response' && config.interChunkDelayMs === 20), true)
+
 const rawPreserveData = createDefaultAppData()
 const rawFunction = new Uint8Array(64)
 rawFunction[0] = 3
@@ -153,5 +219,90 @@ applyBlockToAppData(rawPreserveData, 0xa200, rawBankNames)
 assert.equal(rawPreserveData.bankNames[0], '')
 assert.equal(rawPreserveData.bankNames[1], '中继台')
 assert.deepEqual(Array.from(encodeBlockForAddress(rawPreserveData, 0xa200)), Array.from(rawBankNames))
+
+class NoisyBootTransport implements RadioTransport {
+  readonly kind: RadioTransport['kind']
+  readonly label = 'boot-noise'
+  readonly bootCommands: number[] = []
+  readonly bootPackets: Uint8Array[] = []
+  readonly sentTexts: string[] = []
+  readonly configs: Array<{ packetSize?: number; writeMode?: 'with-response' | 'without-response'; interChunkDelayMs?: number }> = []
+  private queue: number[] = []
+
+  constructor(kind: RadioTransport['kind'] = 'serial', private readonly writeResponse: 'ack' | 'status-only' = 'ack') {
+    this.kind = kind
+  }
+
+  async open() {}
+  async close() {}
+  drain() {
+    this.queue = []
+  }
+  configure(options: { packetSize?: number; writeMode?: 'with-response' | 'without-response'; interChunkDelayMs?: number }) {
+    this.configs.push(options)
+  }
+
+  async write(data: Uint8Array) {
+    const text = new TextDecoder('ascii').decode(data)
+    if (text === 'PROGRAMSHXPU' || text === 'PROGROMSHXU') {
+      this.sentTexts.push(text)
+      this.queue.push(0x06)
+      return
+    }
+    if (data.length === 1 && data[0] === 0x44) {
+      this.queue.push(0x01, 0x36, 0x01, 0x74, 0x04, 0x00, 0x05, 0x20)
+      return
+    }
+    if (data[0] !== 0xa5) return
+
+    const command = data[1]
+    const packageId = (data[2] << 8) | data[3]
+    this.bootPackets.push(new Uint8Array(data))
+    this.bootCommands.push(command)
+    if (command === 0x06) return
+
+    if (command === 0x04) {
+      if (this.kind === 'serial') {
+        this.queue.push(...Array.from(buildBootImagePackage(command, packageId, new Uint8Array([0x59]))))
+        return
+      }
+      this.queue.push(...Array.from(buildBootImagePackage(0xee, 0, new Uint8Array([0x04]))))
+      this.queue.push(...Array.from(buildBootImagePackage(0xee, 0, new Uint8Array([0x01]))))
+      return
+    }
+    if (command === 0x57) {
+      if (this.writeResponse === 'status-only') {
+        this.queue.push(...Array.from(buildBootImagePackage(0xee, 0, new Uint8Array([0x01]))))
+      } else {
+        this.queue.push(...Array.from(buildBootImagePackage(command, packageId, new Uint8Array([0x59]))))
+      }
+      return
+    }
+    this.queue.push(...Array.from(buildBootImagePackage(command, packageId, new Uint8Array([0x59]))))
+  }
+
+  async read(length: number, timeoutMs = 1000) {
+    const started = Date.now()
+    while (this.queue.length < length) {
+      if (Date.now() - started > timeoutMs) throw new Error('timeout')
+      await new Promise((resolve) => setTimeout(resolve, 1))
+    }
+    return new Uint8Array(this.queue.splice(0, length))
+  }
+}
+
+const noisyBootTransport = new NoisyBootTransport('serial')
+await new Shx8800ProSession(noisyBootTransport).writeBootImage(new Uint8Array(32768))
+assert.equal(noisyBootTransport.sentTexts[0], 'PROGRAMSHXPU')
+assert.deepEqual(noisyBootTransport.bootCommands.slice(0, 3), [0x02, 0x04, 0x03])
+assert.deepEqual(Array.from(noisyBootTransport.bootPackets[1].slice(6, 12)), [0x00, 0x00, 0x01, 0x00, 0x00, 0x01])
+assert.deepEqual(Array.from(noisyBootTransport.bootPackets[2].slice(6, 10)), [0x00, 0x00, 0x01, 0x00])
+assert.equal(noisyBootTransport.bootCommands.filter((command) => command === 0x57).length, 32)
+assert.deepEqual(Array.from(noisyBootTransport.bootPackets.at(-1)!.slice(6, 10)), [0x4f, 0x76, 0x65, 0x72])
+
+await assert.rejects(
+  () => new Shx8800ProSession(new NoisyBootTransport('bluetooth')).writeBootImage(new Uint8Array(32768)),
+  /蓝牙写开机图正在开发中，请使用写频线/,
+)
 
 console.log('protocol tests passed')

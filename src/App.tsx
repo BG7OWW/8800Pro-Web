@@ -68,6 +68,8 @@ function App() {
   const [backups, setBackups] = useState<BackupRecord[]>([])
   const [notice, setNotice] = useState<{ tone: 'idle' | 'ok' | 'warn'; text: string } | null>(null)
   const [channelEditorResetKey, setChannelEditorResetKey] = useState(0)
+  const [baselineData, setBaselineData] = useState<AppData>(() => cloneAppData(createDefaultAppData()))
+  const [diffReviewMode, setDiffReviewMode] = useState<'write' | 'view' | null>(null)
   const abortRef = useRef<AbortController | null>(null)
   const showBeian = import.meta.env.MODE === 'server'
 
@@ -88,6 +90,7 @@ function App() {
     }),
     [data],
   )
+  const diffSummary = useMemo(() => summarizeAppDataDiff(baselineData, data), [baselineData, data])
   const visibleNavItems = uiMode === 'simple' ? navItems.filter((item) => ['dashboard', 'channels', 'settings', 'files', 'guide', 'debug'].includes(item.id)) : navItems
 
   function switchUiMode(mode: UiMode) {
@@ -171,6 +174,7 @@ function App() {
       })
       const next = await session.readRadio()
       setData(next)
+      setBaselineData(cloneAppData(next))
       setChannelEditorResetKey((key) => key + 1)
       setActiveView('channels')
       setNotice({ tone: 'ok', text: `读频完成，已切换到 ${next.bankNames[getPreferredBankIndex(next)]}。` })
@@ -181,6 +185,14 @@ function App() {
   }
 
   async function writeRadio() {
+    if (diffSummary.totalChanges > 0) {
+      setDiffReviewMode('write')
+      return
+    }
+    await performWriteRadio()
+  }
+
+  async function performWriteRadio() {
     if (!transport) return
     await withBusy(async () => {
       await saveBackup(data, '写频前自动备份')
@@ -201,11 +213,18 @@ function App() {
         setNotice({ tone: 'ok', text: 'USB 写频完成。建议再点一次“读频”确认机器内容。' })
         addLog('USB 写频完成')
       }
+      setBaselineData(cloneAppData(data))
     })
   }
 
   async function writeBootImage() {
     if (!transport || !data.bootImage?.rgb565) return
+    if (transport.kind === 'bluetooth') {
+      const message = '蓝牙写开机图正在开发中，请使用写频线。'
+      setNotice({ tone: 'warn', text: message })
+      addLog(message)
+      return
+    }
     await withBusy(async () => {
       const abort = new AbortController()
       abortRef.current = abort
@@ -369,15 +388,28 @@ function App() {
           <FilesPanel
             data={data}
             setData={setData}
+            setBaselineData={setBaselineData}
             backups={backups}
             refreshBackups={refreshBackups}
             addLog={addLog}
+            diffSummary={diffSummary}
+            onOpenDiff={() => setDiffReviewMode('view')}
           />
         )}
         {activeView === 'guide' && <GuidePanel setActiveView={setActiveView} />}
         {activeView === 'about' && <AboutPanel />}
         {activeView === 'debug' && <DebugPanel logs={logs} clear={() => setLogs([])} />}
       </main>
+      <DiffReviewDialog
+        open={diffReviewMode !== null}
+        mode={diffReviewMode}
+        summary={diffSummary}
+        onClose={() => setDiffReviewMode(null)}
+        onConfirm={() => {
+          setDiffReviewMode(null)
+          void performWriteRadio()
+        }}
+      />
     </div>
   )
 }
@@ -388,6 +420,80 @@ function OperationNotice({ tone, text }: { tone: 'idle' | 'ok' | 'warn'; text: s
       <strong>{tone === 'warn' ? '需要处理' : tone === 'ok' ? '操作状态' : '提示'}</strong>
       <span>{text}</span>
     </section>
+  )
+}
+
+function DiffReviewDialog({
+  open,
+  mode,
+  summary,
+  onClose,
+  onConfirm,
+}: {
+  open: boolean
+  mode: 'write' | 'view' | null
+  summary: AppDataDiffSummary
+  onClose: () => void
+  onConfirm: () => void
+}) {
+  if (!open) return null
+  const isWrite = mode === 'write'
+  return (
+    <div className="modal-layer" role="dialog" aria-modal="true" aria-label="差异对比">
+      <button type="button" className="modal-scrim" aria-label="关闭差异对比" onClick={onClose} />
+      <section className="diff-dialog">
+        <div className="panel-heading compact-actions">
+          <div>
+            <h3>{isWrite ? '写频前审查' : '差异对比'}</h3>
+            <p>当前配置相对最近读频、导入或恢复的基准镜像共有 {summary.totalChanges} 项变化。</p>
+          </div>
+          <button type="button" className="ghost-button" onClick={onClose}>关闭</button>
+        </div>
+        <DiffSummaryBody summary={summary} />
+        <div className="diff-footer">
+          {isWrite ? (
+            <button type="button" className="primary-button warn" onClick={onConfirm}>
+              <Upload size={18} />
+              确认写频
+            </button>
+          ) : null}
+        </div>
+      </section>
+    </div>
+  )
+}
+
+function DiffSummaryStrip({ summary }: { summary: AppDataDiffSummary }) {
+  const topGroups = summary.groups.filter((group) => group.count > 0).slice(0, 3)
+  return (
+    <div className={`diff-strip ${summary.totalChanges > 0 ? 'changed' : ''}`}>
+      <strong>{summary.totalChanges > 0 ? `有 ${summary.totalChanges} 项待写入差异` : '当前配置与基准一致'}</strong>
+      <span>{topGroups.length > 0 ? topGroups.map((group) => `${group.label} ${group.count}`).join(' · ') : '读频、导入或恢复后会建立新的基准镜像。'}</span>
+    </div>
+  )
+}
+
+function DiffSummaryBody({ summary }: { summary: AppDataDiffSummary }) {
+  if (summary.totalChanges === 0) return <div className="channel-empty">暂无差异。</div>
+  return (
+    <div className="diff-list">
+      {summary.groups.filter((group) => group.count > 0).map((group) => (
+        <article key={group.label} className="diff-group">
+          <div className="diff-group-title">
+            <strong>{group.label}</strong>
+            <span>{group.count} 项</span>
+          </div>
+          {group.items.slice(0, 24).map((item) => (
+            <div key={item.path} className="diff-row">
+              <span>{item.label}</span>
+              <del>{formatDiffValue(item.before)}</del>
+              <ins>{formatDiffValue(item.after)}</ins>
+            </div>
+          ))}
+          {group.items.length > 24 ? <small>还有 {group.items.length - 24} 项未展开</small> : null}
+        </article>
+      ))}
+    </div>
   )
 }
 
@@ -1315,12 +1421,12 @@ function BootImagePanel({
       </section>
       <section className="panel inspector">
         <h3>写入策略</h3>
-        <p className="muted">USB 会使用 8800Pro 新版图片协议写入。蓝牙会走同一协议并自动降级包长，但无法像原生 App 一样强制协商 MTU，建议先用 USB 验证。</p>
+        <p className="muted">USB 会使用 8800Pro 新版图片协议写入。蓝牙写开机图正在开发中，请使用写频线。</p>
         <div className="summary-list">
           <span>尺寸 <strong>{SHX8800PRO.bootImageWidth}×{SHX8800PRO.bootImageHeight}</strong></span>
           <span>格式 <strong>RGB565 LE</strong></span>
           <span>数据 <strong>{data.bootImage?.rgb565?.length ?? 0} bytes</strong></span>
-          <span>链路 <strong>{transportKind === 'bluetooth' ? '蓝牙实验' : transportKind === 'serial' ? 'USB' : '未连接'}</strong></span>
+          <span>链路 <strong>{transportKind === 'bluetooth' ? '蓝牙暂停' : transportKind === 'serial' ? 'USB' : '未连接'}</strong></span>
         </div>
         <button type="button" className="primary-button warn" onClick={onWrite} disabled={busy || !canWrite}>
           <Upload size={18} />
@@ -1426,18 +1532,25 @@ function SatellitePanel({ setData, addLog }: DataPanelProps & { addLog: (line: s
 function FilesPanel({
   data,
   setData,
+  setBaselineData,
   backups,
   refreshBackups,
   addLog,
+  diffSummary,
+  onOpenDiff,
 }: DataPanelProps & {
+  setBaselineData: (data: AppData) => void
   backups: BackupRecord[]
   refreshBackups: () => Promise<void>
   addLog: (line: string) => void
+  diffSummary: AppDataDiffSummary
+  onOpenDiff: () => void
 }) {
   async function importJson(file: File | undefined) {
     if (!file) return
     const next = await loadJsonFile(file)
     setData(() => next)
+    setBaselineData(cloneAppData(next))
     addLog(`已打开配置：${file.name}`)
   }
 
@@ -1467,6 +1580,7 @@ function FilesPanel({
           <span>当前配置 <strong>{new Date(data.updatedAt).toLocaleString()}</strong></span>
           <span>最近备份 <strong>{latestBackup ? new Date(latestBackup.createdAt).toLocaleString() : '暂无'}</strong></span>
           <span>已保存版本 <strong>{backups.length} 份</strong></span>
+          <span>待写入差异 <strong>{diffSummary.totalChanges} 项</strong></span>
         </div>
         <div className="action-grid">
           <button type="button" className="primary-button" onClick={() => downloadJson(data)}>
@@ -1490,7 +1604,12 @@ function FilesPanel({
           <button type="button" className="ghost-button" onClick={() => exportCsv(data)}>
             导出 CSV
           </button>
+          <button type="button" className="ghost-button" onClick={onOpenDiff}>
+            <ListChecks size={18} />
+            差异对比
+          </button>
         </div>
+        <DiffSummaryStrip summary={diffSummary} />
       </section>
       <section className="panel">
         <div className="panel-heading">
@@ -1512,7 +1631,9 @@ function FilesPanel({
               </div>
               <div className="backup-actions">
                 <button type="button" onClick={() => {
-                  setData(() => cloneAppData(backup.data))
+                  const restored = cloneAppData(backup.data)
+                  setData(() => restored)
+                  setBaselineData(cloneAppData(restored))
                   addLog(`已恢复备份：${backup.reason}`)
                 }}>恢复</button>
                 <button type="button" onClick={() => void deleteBackup(backup.id).then(refreshBackups)}>删除</button>
@@ -1638,6 +1759,24 @@ function DebugPanel({ logs, clear }: { logs: string[]; clear: () => void }) {
   )
 }
 
+interface AppDataDiffItem {
+  path: string
+  label: string
+  before: unknown
+  after: unknown
+}
+
+interface AppDataDiffGroup {
+  label: string
+  count: number
+  items: AppDataDiffItem[]
+}
+
+interface AppDataDiffSummary {
+  totalChanges: number
+  groups: AppDataDiffGroup[]
+}
+
 interface DataPanelProps {
   data: AppData
   setData: (updater: (current: AppData) => AppData) => void
@@ -1734,6 +1873,151 @@ function getPreferredBankIndex(data: AppData) {
   if (data.channels[currentBank]?.some((channel) => channel.visible && channel.rxFreq)) return currentBank
   const firstFilledBank = data.channels.findIndex((bank) => bank.some((channel) => channel.visible && channel.rxFreq))
   return firstFilledBank >= 0 ? firstFilledBank : 0
+}
+
+const CHANNEL_DIFF_LABELS: Record<keyof Channel, string> = {
+  id: '编号',
+  rxFreq: '接收频率',
+  rxTone: '接收亚音',
+  txFreq: '发射频率',
+  txTone: '发射亚音',
+  txPower: '功率',
+  bandwidth: '带宽',
+  scanAdd: '扫描',
+  busyLock: '忙锁',
+  pttid: 'PTT-ID',
+  signalGroup: '信令组',
+  name: '名称',
+  visible: '启用',
+}
+
+const VFO_DIFF_LABELS: Record<keyof AppData['vfos'], string> = {
+  pttid: 'PTT-ID',
+  vfoAFreq: 'A 频率',
+  vfoBFreq: 'B 频率',
+  vfoAOffset: 'A 差频',
+  vfoBOffset: 'B 差频',
+  vfoARxTone: 'A 接收亚音',
+  vfoATxTone: 'A 发射亚音',
+  vfoBRxTone: 'B 接收亚音',
+  vfoBTxTone: 'B 发射亚音',
+  vfoATxPower: 'A 功率',
+  vfoBTxPower: 'B 功率',
+  vfoABandwidth: 'A 带宽',
+  vfoBBandwidth: 'B 带宽',
+  vfoAStep: 'A 步进',
+  vfoBStep: 'B 步进',
+  vfoABusyLock: 'A 忙锁',
+  vfoBBusyLock: 'B 忙锁',
+  vfoASignalGroup: 'A 信令组',
+  vfoBSignalGroup: 'B 信令组',
+  vfoADirection: 'A 方向',
+  vfoBDirection: 'B 方向',
+  vfoAScramble: 'A 加扰',
+  vfoBScramble: 'B 加扰',
+}
+
+function summarizeAppDataDiff(before: AppData, after: AppData): AppDataDiffSummary {
+  const groups: AppDataDiffGroup[] = [
+    diffPrimitiveGroup('区域名称', before.bankNames, after.bankNames, (index) => `区域 ${index + 1}`),
+    diffChannelsGroup(before.channels, after.channels),
+    diffObjectGroup('VFO', before.vfos, after.vfos, VFO_DIFF_LABELS),
+    diffObjectGroup('功能设置', before.functions, after.functions, {}),
+    diffObjectGroup('DTMF', before.dtmf, after.dtmf, {}),
+    diffObjectGroup('FM 收音机', before.fm, after.fm, {}),
+    diffBootImageGroup(before.bootImage, after.bootImage),
+    diffRawBlocksGroup(before.rawBlocks, after.rawBlocks),
+  ]
+  return {
+    groups,
+    totalChanges: groups.reduce((total, group) => total + group.count, 0),
+  }
+}
+
+function diffChannelsGroup(before: Channel[][] = [], after: Channel[][] = []): AppDataDiffGroup {
+  const items: AppDataDiffItem[] = []
+  const bankCount = Math.max(before.length, after.length)
+  for (let bankIndex = 0; bankIndex < bankCount; bankIndex += 1) {
+    const beforeBank = before[bankIndex] ?? []
+    const afterBank = after[bankIndex] ?? []
+    const channelCount = Math.max(beforeBank.length, afterBank.length)
+    for (let channelIndex = 0; channelIndex < channelCount; channelIndex += 1) {
+      const beforeChannel = beforeBank[channelIndex] ?? createEmptyChannel(channelIndex + 1)
+      const afterChannel = afterBank[channelIndex] ?? createEmptyChannel(channelIndex + 1)
+      for (const key of Object.keys(CHANNEL_DIFF_LABELS) as Array<keyof Channel>) {
+        if (!sameValue(beforeChannel[key], afterChannel[key])) {
+          items.push({
+            path: `channels.${bankIndex}.${channelIndex}.${key}`,
+            label: `区域 ${bankIndex + 1} / CH-${channelIndex + 1} / ${CHANNEL_DIFF_LABELS[key]}`,
+            before: beforeChannel[key],
+            after: afterChannel[key],
+          })
+        }
+      }
+    }
+  }
+  return { label: '信道', count: items.length, items }
+}
+
+function diffPrimitiveGroup<T>(label: string, before: T[] = [], after: T[] = [], itemLabel: (index: number) => string): AppDataDiffGroup {
+  const items: AppDataDiffItem[] = []
+  const length = Math.max(before.length, after.length)
+  for (let index = 0; index < length; index += 1) {
+    if (!sameValue(before[index], after[index])) {
+      items.push({ path: `${label}.${index}`, label: itemLabel(index), before: before[index], after: after[index] })
+    }
+  }
+  return { label, count: items.length, items }
+}
+
+function diffObjectGroup<T extends object>(label: string, before: T, after: T, labels: Partial<Record<keyof T, string>>): AppDataDiffGroup {
+  const items: AppDataDiffItem[] = []
+  const leftObject = before as Record<string, unknown>
+  const rightObject = after as Record<string, unknown>
+  const keys = new Set([...Object.keys(leftObject), ...Object.keys(rightObject)])
+  keys.forEach((key) => {
+    const typedKey = key as keyof T
+    const left = leftObject[key]
+    const right = rightObject[key]
+    if (!sameValue(left, right)) {
+      items.push({ path: `${label}.${key}`, label: labels[typedKey] ?? key, before: left, after: right })
+    }
+  })
+  return { label, count: items.length, items }
+}
+
+function diffBootImageGroup(before?: AppData['bootImage'], after?: AppData['bootImage']): AppDataDiffGroup {
+  const items: AppDataDiffItem[] = []
+  const keys: Array<keyof NonNullable<AppData['bootImage']>> = ['name', 'width', 'height', 'dataUrl', 'rgb565']
+  keys.forEach((key) => {
+    const left = key === 'rgb565' ? before?.rgb565?.length : before?.[key]
+    const right = key === 'rgb565' ? after?.rgb565?.length : after?.[key]
+    if (!sameValue(left, right)) items.push({ path: `bootImage.${key}`, label: key === 'rgb565' ? 'RGB565 数据长度' : `开机图 ${key}`, before: left, after: right })
+  })
+  return { label: '开机图', count: items.length, items }
+}
+
+function diffRawBlocksGroup(before: AppData['rawBlocks'] = {}, after: AppData['rawBlocks'] = {}): AppDataDiffGroup {
+  const items: AppDataDiffItem[] = []
+  const keys = new Set([...Object.keys(before), ...Object.keys(after)])
+  keys.forEach((key) => {
+    if (!sameValue(before[key], after[key])) {
+      items.push({ path: `rawBlocks.${key}`, label: `原始块 ${key}`, before: `${before[key]?.length ?? 0} bytes`, after: `${after[key]?.length ?? 0} bytes` })
+    }
+  })
+  return { label: '原始镜像块', count: items.length, items }
+}
+
+function sameValue(left: unknown, right: unknown) {
+  return JSON.stringify(left ?? null) === JSON.stringify(right ?? null)
+}
+
+function formatDiffValue(value: unknown) {
+  if (value === undefined || value === null || value === '') return '空'
+  if (typeof value === 'boolean') return value ? '是' : '否'
+  if (Array.isArray(value)) return `${value.length} 项`
+  const text = String(value)
+  return text.length > 80 ? `${text.slice(0, 80)}...` : text
 }
 
 export default App

@@ -49,6 +49,13 @@ export class Shx8800ProSession {
     this.assertNotAborted()
     await this.handshake()
     const blocks = getWriteBlocks(data)
+    if (this.transport.kind === 'bluetooth') {
+      await this.writeBluetoothBlockPairs(blocks)
+      await this.transport.write(new Uint8Array([0x45]))
+      await this.readAck('蓝牙结束写频失败：未收到 ACK', 5000).catch(() => undefined)
+      this.progress('done', undefined, 100)
+      return
+    }
     for (let index = 0; index < blocks.length; index += 1) {
       this.assertNotAborted()
       const block = blocks[index]
@@ -69,6 +76,9 @@ export class Shx8800ProSession {
   async writeBootImage(rgb565: Uint8Array) {
     this.assertNotAborted()
     if (rgb565.length !== 32768) throw new Error('开机图数据必须是 128×128 RGB565，也就是 32768 bytes')
+    if (this.transport.kind === 'bluetooth') {
+      throw new Error('蓝牙写开机图正在开发中，请使用写频线。')
+    }
     const boot = new BootImageProtocol(this.transport, this.options)
     await boot.write(rgb565)
   }
@@ -106,6 +116,37 @@ export class Shx8800ProSession {
       }
     }
     throw new Error(`写入失败：${addressLabel(address)}`)
+  }
+
+  private async writeBluetoothBlockPairs(blocks: Array<{ address: number; payload: Uint8Array }>) {
+    for (let index = 0; index < blocks.length; index += 2) {
+      this.assertNotAborted()
+      const first = blocks[index]
+      const second = blocks[index + 1]
+      this.progress('write', first.address, Math.round((index / blocks.length) * 100))
+      await this.writeBluetoothFrame(first.address, first.payload)
+      if (second) {
+        this.progress('write', second.address, Math.round(((index + 1) / blocks.length) * 100))
+        await this.writeBluetoothFrame(second.address, second.payload)
+      }
+      try {
+        await this.readAck(`蓝牙写入失败：${addressLabel(first.address)}${second ? ` / ${addressLabel(second.address)}` : ''}`, 5000)
+        await sleep(250)
+      } catch {
+        throw new Error(`蓝牙写入失败：${addressLabel(first.address)}${second ? ` / ${addressLabel(second.address)}` : ''}`)
+      }
+    }
+  }
+
+  private async writeBluetoothFrame(address: number, payload: Uint8Array) {
+    const frame = buildWriteFrame(address, payload)
+    this.configureBluetoothParameterPacket()
+    try {
+      await this.transport.write(frame)
+      this.log(`TX BLE WRITE ${addressLabel(address)} ${hex(frame.slice(0, 8))} ...`)
+    } finally {
+      this.restoreBluetoothParameterPacket()
+    }
   }
 
   private async readAck(message: string, timeoutMs: number) {
@@ -165,6 +206,20 @@ export class Shx8800ProSession {
 
   private log(line: string) {
     this.options.onLog?.(line)
+  }
+
+  private configureBluetoothParameterPacket() {
+    const configurable = this.transport as RadioTransport & {
+      configure?: (options: { packetSize?: number; writeMode?: 'with-response' | 'without-response'; interChunkDelayMs?: number }) => void
+    }
+    configurable.configure?.({ packetSize: 18, writeMode: 'with-response', interChunkDelayMs: 20 })
+  }
+
+  private restoreBluetoothParameterPacket() {
+    const configurable = this.transport as RadioTransport & {
+      configure?: (options: { packetSize?: number; writeMode?: 'with-response' | 'without-response'; interChunkDelayMs?: number }) => void
+    }
+    configurable.configure?.({ packetSize: 18, writeMode: 'with-response', interChunkDelayMs: 20 })
   }
 
   private async performHandshake() {
@@ -286,13 +341,21 @@ class BootImageProtocol {
     throw new Error('开机图握手失败：设备没有进入刷图模式')
   }
 
-  private async sendAndExpect(command: number, packageId: number, payload: Uint8Array, label: string, percent: number) {
+  private async sendAndExpect(
+    command: number,
+    packageId: number,
+    payload: Uint8Array,
+    label: string,
+    percent: number,
+    expectedPackageId?: number,
+    successStatus?: number,
+  ) {
     this.progress(percent, label)
     const packet = buildBootImagePackage(command, packageId, payload)
     for (let attempt = 0; attempt < 4; attempt += 1) {
       this.assertNotAborted()
       await this.transport.write(packet)
-      const response = await this.readPackage(command, command === BOOT.cmdErase ? 12000 : 6000).catch((error) => {
+      const response = await this.readPackage(command, command === BOOT.cmdErase ? 12000 : 6000, expectedPackageId, successStatus).catch((error) => {
         if (attempt >= 3) throw error
         return null
       })
@@ -301,19 +364,60 @@ class BootImageProtocol {
     throw new Error(`${label}失败：设备未确认`)
   }
 
-  private async readPackage(expectedCommand: number, timeoutMs: number) {
-    const header = await this.transport.read(6, timeoutMs)
-    if (header[0] !== BOOT.header) throw new Error(`开机图响应头错误：${hex(header)}`)
-    const length = (header[4] << 8) | header[5]
-    const rest = await this.transport.read(length + 2, timeoutMs)
-    const packet = new Uint8Array(6 + rest.length)
-    packet.set(header, 0)
-    packet.set(rest, 6)
-    if (packet[1] !== expectedCommand) throw new Error(`开机图响应命令不匹配：0x${packet[1].toString(16)}`)
-    const expectedCrc = (packet[6 + length] << 8) | packet[6 + length + 1]
-    const actualCrc = crc16Ccitt(packet, 1, length + 5)
-    if (expectedCrc !== actualCrc) throw new Error('开机图响应 CRC 校验失败')
-    return packet.slice(6, 6 + length)
+  private async readPackage(expectedCommand: number, timeoutMs: number, expectedPackageId?: number, successStatus?: number) {
+    const deadline = Date.now() + timeoutMs
+    const buffer: number[] = []
+    const maxPayloadLength = BOOT.blockBytes
+
+    while (Date.now() < deadline) {
+      const byte = await this.transport.read(1, Math.max(150, deadline - Date.now())).catch(() => null)
+      if (!byte) continue
+      buffer.push(byte[0])
+
+      while (buffer.length > 0 && buffer[0] !== BOOT.header) buffer.shift()
+      if (buffer.length < 6) continue
+
+      const length = (buffer[4] << 8) | buffer[5]
+      if (length > maxPayloadLength) {
+        this.options.onLog?.(`跳过异常开机图响应长度：${length}`)
+        buffer.shift()
+        continue
+      }
+
+      const packetLength = 6 + length + 2
+      if (buffer.length < packetLength) continue
+
+      const packet = new Uint8Array(buffer.splice(0, packetLength))
+      const expectedCrc = (packet[6 + length] << 8) | packet[6 + length + 1]
+      const actualCrc = crc16Ccitt(packet, 1, length + 5)
+      if (expectedCrc !== actualCrc) {
+        this.options.onLog?.('跳过开机图响应：CRC 校验失败')
+        continue
+      }
+
+      if (packet[1] === 0xee) {
+        const status = packet[6]
+        if (successStatus !== undefined && status === successStatus) {
+          this.options.onLog?.(`开机图状态完成：0x${status.toString(16)}`)
+          return new Uint8Array([BOOT.ackPayload])
+        }
+        this.options.onLog?.(`跳过开机图状态包：0x${status?.toString(16) ?? '??'}`)
+        continue
+      }
+
+      if (packet[1] !== expectedCommand) {
+        this.options.onLog?.(`跳过开机图响应命令：0x${packet[1].toString(16)}`)
+        continue
+      }
+      const packageId = (packet[2] << 8) | packet[3]
+      if (expectedPackageId !== undefined && packageId !== expectedPackageId) {
+        this.options.onLog?.(`跳过开机图响应包号：${packageId}`)
+        continue
+      }
+      return packet.slice(6, 6 + length)
+    }
+
+    throw new Error(`开机图响应超时：0x${expectedCommand.toString(16)}`)
   }
 
   private progress(percent: number, label: string) {
@@ -363,5 +467,5 @@ function buildErasePayload() {
 }
 
 function sleep(ms: number) {
-  return new Promise((resolve) => window.setTimeout(resolve, ms))
+  return new Promise((resolve) => globalThis.setTimeout(resolve, ms))
 }

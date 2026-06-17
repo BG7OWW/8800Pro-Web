@@ -4,8 +4,9 @@ Web programmer for the Senhaix 8800Pro, built with React, Vite, and TypeScript.
 
 ## Features
 
-- Read and write channels, settings, and boot image data
-- USB serial and Bluetooth Low Energy support
+- Read and write channels and settings over USB serial or Bluetooth Low Energy
+- Write 8800Pro boot images over USB serial
+- Bluetooth boot-image writing is currently disabled while the device-safe link is still being verified
 - New-user friendly workflow with guided pages and inline help
 - GitHub Pages friendly build with relative asset paths
 
@@ -32,4 +33,3 @@ pnpm build:server
 
 This repository includes a GitHub Actions workflow at `.github/workflows/deploy-pages.yml`.
 To deploy the site on GitHub Pages, enable Pages for the repository and set the source to GitHub Actions.
-
