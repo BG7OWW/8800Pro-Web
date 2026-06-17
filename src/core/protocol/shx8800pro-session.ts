@@ -16,6 +16,7 @@ export interface SessionOptions {
   onProgress?: (progress: SessionProgress) => void
   onLog?: (line: string) => void
   signal?: AbortSignal
+  bluetoothBlockDelayMs?: number
 }
 
 export class Shx8800ProSession {
@@ -126,12 +127,13 @@ export class Shx8800ProSession {
       this.progress('write', first.address, Math.round((index / blocks.length) * 100))
       await this.writeBluetoothFrame(first.address, first.payload)
       if (second) {
+        await sleep(this.bluetoothBlockDelayMs())
         this.progress('write', second.address, Math.round(((index + 1) / blocks.length) * 100))
         await this.writeBluetoothFrame(second.address, second.payload)
       }
       try {
         await this.readAck(`蓝牙写入失败：${addressLabel(first.address)}${second ? ` / ${addressLabel(second.address)}` : ''}`, 5000)
-        await sleep(250)
+        await sleep(this.bluetoothBlockDelayMs())
       } catch {
         throw new Error(`蓝牙写入失败：${addressLabel(first.address)}${second ? ` / ${addressLabel(second.address)}` : ''}`)
       }
@@ -220,6 +222,10 @@ export class Shx8800ProSession {
       configure?: (options: { packetSize?: number; writeMode?: 'with-response' | 'without-response'; interChunkDelayMs?: number }) => void
     }
     configurable.configure?.({ packetSize: 18, writeMode: 'with-response', interChunkDelayMs: 20 })
+  }
+
+  private bluetoothBlockDelayMs() {
+    return this.options.bluetoothBlockDelayMs ?? 250
   }
 
   private async performHandshake() {

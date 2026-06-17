@@ -78,11 +78,11 @@ assert.deepEqual(Array.from(encodeBlockForAddress(noisyEmptyChannelData, 0x0880)
 
 const bogusFrequencyData = createDefaultAppData()
 const bogusFrequencyBlock = new Uint8Array(64).fill(0xff)
-bogusFrequencyBlock.set([0x57, 0x08, 0x00, 0x04], 0)
-bogusFrequencyBlock.set([0x57, 0x08, 0x04, 0x04], 32)
+bogusFrequencyBlock.set([0x57, 0x08, 0x40, 0x40], 0)
+bogusFrequencyBlock.set([0x57, 0x08, 0x40, 0x40], 32)
 applyBlockToAppData(bogusFrequencyData, 0x0880, bogusFrequencyBlock)
-assert.equal(bogusFrequencyData.channels[1][4].rxFreq, '')
-assert.equal(bogusFrequencyData.channels[1][5].rxFreq, '')
+assert.equal(bogusFrequencyData.channels[1][4].rxFreq, '404.00857')
+assert.equal(bogusFrequencyData.channels[1][5].rxFreq, '404.00857')
 assert.deepEqual(Array.from(encodeBlockForAddress(bogusFrequencyData, 0x0880)), Array.from(new Uint8Array(64).fill(0xff)))
 
 const newChannelWithoutRaw = createDefaultAppData()
@@ -241,7 +241,7 @@ bluetoothWriteData.channels[0][0] = {
   name: 'BLE-1',
 }
 const blePayload = encodeBlockForAddress(bluetoothWriteData, 0)
-await new Shx8800ProSession(bluetoothWriteTransport).writeRadio(bluetoothWriteData)
+await new Shx8800ProSession(bluetoothWriteTransport, { bluetoothBlockDelayMs: 0 }).writeRadio(bluetoothWriteData)
 const bleWrites = bluetoothWriteTransport.writes.filter((write) => write[0] === 0x57)
 assert.equal(bleWrites.length, getShx8800ProReadWriteAddresses().length)
 assert.equal(bleWrites[0].length, 68)

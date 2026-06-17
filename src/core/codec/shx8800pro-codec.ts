@@ -223,7 +223,7 @@ function encodeChannel(channel: Channel, base?: Uint8Array, preserveUnknownFlags
 
 function decodeChannel(payload: Uint8Array, id: number): Channel {
   const rxFreq = decodeChannelFrequency(payload, 0)
-  if (payload[0] === 0xff || payload[1] === 0xff || payload[3] === 0 || !isUsableChannelFrequency(payload, 0, rxFreq)) {
+  if (payload[0] === 0xff || payload[1] === 0xff || payload[3] === 0 || !isDecodableChannelFrequency(payload, 0, rxFreq)) {
     return createEmptyChannel(id)
   }
   const name = payload[20] !== 0xff ? decodeRadioText(payload, 20, 12) : ''
@@ -244,11 +244,11 @@ function decodeChannel(payload: Uint8Array, id: number): Channel {
   }
 }
 
-function isUsableChannelFrequency(payload: Uint8Array, offset: number, frequency: string) {
+function isDecodableChannelFrequency(payload: Uint8Array, offset: number, frequency: string) {
   for (let index = offset; index < offset + 4; index += 1) {
     if ((payload[index] & 0x0f) > 9 || ((payload[index] >> 4) & 0x0f) > 9) return false
   }
-  return normalizeRadioFrequency(frequency) === frequency
+  return Boolean(normalizeRadioFrequency(frequency))
 }
 
 function setChannelByFlatIndex(data: AppData, flatIndex: number, channel: Channel) {
