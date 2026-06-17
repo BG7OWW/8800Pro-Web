@@ -145,8 +145,12 @@ export class Shx8800ProSession {
   }
 
   private async writeBluetoothFrame(address: number, payload: Uint8Array) {
+    const header = buildWriteFrame(address, new Uint8Array(0)).slice(0, 4)
     this.configureBluetoothParameterPacket()
     try {
+      await this.transport.write(header)
+      this.log(`TX BLE HEADER ${addressLabel(address)} ${hex(header)}`)
+      await sleep(20)
       await this.transport.write(payload)
       this.log(`TX BLE DATA ${addressLabel(address)} ${hex(payload.slice(0, 8))} ...`)
     } finally {
