@@ -936,8 +936,24 @@ function ChannelEditor({
           <span>发射 <strong>{selected.txFreq || selected.rxFreq || '空'}</strong></span>
         </div>
         <div className="form-grid">
-          <TextField label="接收频率" value={selected.rxFreq} placeholder="例：145.50000" hint={fieldTips.rxFreq} onChange={(value) => updateSelected({ rxFreq: normalizeRadioFrequency(value, value) })} />
-          <TextField label="发射频率" value={selected.txFreq} placeholder="不确定时先填和接收一样" hint={fieldTips.txFreq} onChange={(value) => updateSelected({ txFreq: normalizeRadioFrequency(value, value) })} />
+          <TextField
+            label="接收频率"
+            value={selected.rxFreq}
+            placeholder="例：145.50000"
+            hint={fieldTips.rxFreq}
+            inputMode="decimal"
+            onChange={(value) => updateSelected({ rxFreq: sanitizeFrequencyDraft(value) })}
+            onBlur={(value) => updateSelected({ rxFreq: normalizeRadioFrequency(value, value) })}
+          />
+          <TextField
+            label="发射频率"
+            value={selected.txFreq}
+            placeholder="不确定时先填和接收一样"
+            hint={fieldTips.txFreq}
+            inputMode="decimal"
+            onChange={(value) => updateSelected({ txFreq: sanitizeFrequencyDraft(value) })}
+            onBlur={(value) => updateSelected({ txFreq: normalizeRadioFrequency(value, value) })}
+          />
           <SelectField label="接收亚音" value={selected.rxTone} options={TONE_CHOICES} hint={fieldTips.rxTone} onChange={(value) => updateSelected({ rxTone: value })} />
           <SelectField label="发射亚音" value={selected.txTone} options={TONE_CHOICES} hint={fieldTips.txTone} onChange={(value) => updateSelected({ txTone: value })} />
           <SelectIndex label="功率" value={selected.txPower} options={CHANNEL_CHOICES.power} hint="发射强度。不懂就先保持默认。" onChange={(value) => updateSelected({ txPower: value })} />
@@ -1078,6 +1094,17 @@ function DynamicVfoField({
   if (field.type === 'onoff') return <SelectIndex label={field.label} value={Number(value)} options={CHANNEL_CHOICES.busyLock} onChange={(next) => update(field.key, next)} />
   if (field.type === 'signal') return <SelectIndex label={field.label} value={Number(value)} options={CHANNEL_CHOICES.signalGroup} onChange={(next) => update(field.key, next)} />
   if (field.type === 'direction') return <SelectIndex label={field.label} value={Number(value)} options={VFO_CHOICES.direction} onChange={(next) => update(field.key, next)} />
+  if (field.key === 'vfoAFreq' || field.key === 'vfoBFreq') {
+    return (
+      <TextField
+        label={field.label}
+        value={String(value)}
+        inputMode="decimal"
+        onChange={(next) => update(field.key, sanitizeFrequencyDraft(next))}
+        onBlur={(next) => update(field.key, normalizeRadioFrequency(next, next))}
+      />
+    )
+  }
   return <TextField label={field.label} value={String(value)} onChange={(next) => update(field.key, next)} />
 }
 
@@ -1786,24 +1813,53 @@ function TextField({
   label,
   value,
   onChange,
+  onBlur,
   compact = false,
   hint,
   placeholder,
+  inputMode,
 }: {
   label: string
   value: string
   onChange: (value: string) => void
+  onBlur?: (value: string) => void
   compact?: boolean
   hint?: string
   placeholder?: string
+  inputMode?: 'none' | 'text' | 'tel' | 'url' | 'email' | 'numeric' | 'decimal' | 'search'
 }) {
   return (
     <label className={`field ${compact ? 'compact' : ''}`}>
       <span>{label}</span>
-      <input value={value} placeholder={placeholder} onChange={(event) => onChange(event.target.value)} />
+      <input
+        value={value}
+        placeholder={placeholder}
+        inputMode={inputMode}
+        onChange={(event) => onChange(event.target.value)}
+        onBlur={(event) => onBlur?.(event.target.value)}
+      />
       {hint ? <small>{hint}</small> : null}
     </label>
   )
+}
+
+function sanitizeFrequencyDraft(value: string) {
+  const normalized = value.toUpperCase().replace(/\s/g, '').replace(/MHZ$/i, '')
+  let output = ''
+  let hasDot = false
+  for (const char of normalized) {
+    if (char >= '0' && char <= '9') {
+      if (!hasDot && output.length >= 3) continue
+      if (hasDot && output.split('.')[1]?.length >= 5) continue
+      output += char
+      continue
+    }
+    if (char === '.' && !hasDot) {
+      hasDot = true
+      output += char
+    }
+  }
+  return output
 }
 
 function SelectField<T extends readonly string[]>({
