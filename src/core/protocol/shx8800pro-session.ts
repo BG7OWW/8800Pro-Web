@@ -124,6 +124,7 @@ export class Shx8800ProSession {
   }
 
   private async writeBluetoothBlockPairs(blocks: Array<{ address: number; payload: Uint8Array }>) {
+    if (blocks.length > 0) await this.startBluetoothWriteStream(blocks[0].address)
     for (let index = 0; index < blocks.length; index += 2) {
       this.assertNotAborted()
       const first = blocks[index]
@@ -145,14 +146,22 @@ export class Shx8800ProSession {
   }
 
   private async writeBluetoothFrame(address: number, payload: Uint8Array) {
+    this.configureBluetoothParameterPacket()
+    try {
+      await this.transport.write(payload)
+      this.log(`TX BLE DATA ${addressLabel(address)} ${hex(payload.slice(0, 8))} ...`)
+    } finally {
+      this.restoreBluetoothParameterPacket()
+    }
+  }
+
+  private async startBluetoothWriteStream(address: number) {
     const header = buildWriteFrame(address, new Uint8Array(0)).slice(0, 4)
     this.configureBluetoothParameterPacket()
     try {
       await this.transport.write(header)
-      this.log(`TX BLE HEADER ${addressLabel(address)} ${hex(header)}`)
-      await sleep(20)
-      await this.transport.write(payload)
-      this.log(`TX BLE DATA ${addressLabel(address)} ${hex(payload.slice(0, 8))} ...`)
+      this.log(`TX BLE START ${hex(header)}`)
+      await sleep(80)
     } finally {
       this.restoreBluetoothParameterPacket()
     }
