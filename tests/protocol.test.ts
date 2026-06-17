@@ -250,6 +250,7 @@ assert.deepEqual(Array.from(bleWrites[0].slice(0, 4)), [0x57, 0x00, 0x00, 0x40])
 assert.deepEqual(Array.from(bleWrites[1].slice(0, 4)), [0x57, 0x00, 0x40, 0x40])
 assert.deepEqual(Array.from(bleWrites[0].slice(4)), Array.from(blePayload))
 assert.equal(bluetoothWriteTransport.configs.some((config) => config.packetSize === 18 && config.writeMode === 'with-response' && config.interChunkDelayMs === 20), true)
+assert.equal(bluetoothWriteTransport.configs.some((config) => config.packetSize === 18 && config.writeMode === 'without-response' && config.interChunkDelayMs === 20), true)
 
 const rawPreserveData = createDefaultAppData()
 const rawFunction = new Uint8Array(64)

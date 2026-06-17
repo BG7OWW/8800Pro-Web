@@ -32,14 +32,7 @@ export class Shx8800ProSession {
     this.assertNotAborted()
     await this.handshake()
     const data = createDefaultAppData()
-    const addresses = getShx8800ProReadWriteAddresses()
-    for (let index = 0; index < addresses.length; index += 1) {
-      this.assertNotAborted()
-      const address = addresses[index]
-      this.progress('read', address, Math.round((index / addresses.length) * 100))
-      const frame = await this.readBlock(address)
-      applyBlockToAppData(data, address, frame)
-    }
+    await this.readBlocksInto(data)
     await this.transport.write(new Uint8Array([0x45]))
     data.updatedAt = new Date().toISOString()
     this.progress('done', undefined, 100)
@@ -49,14 +42,14 @@ export class Shx8800ProSession {
   async writeRadio(data: AppData) {
     this.assertNotAborted()
     await this.handshake()
-    const blocks = getWriteBlocks(data)
     if (this.transport.kind === 'bluetooth') {
-      await this.writeBluetoothBlockPairs(blocks)
+      await this.writeBluetoothBlockPairs(getWriteBlocks(data))
       await this.transport.write(new Uint8Array([0x45]))
       await this.readAck('蓝牙结束写频失败：未收到 ACK', 5000).catch(() => undefined)
       this.progress('done', undefined, 100)
       return
     }
+    const blocks = getWriteBlocks(data)
     for (let index = 0; index < blocks.length; index += 1) {
       this.assertNotAborted()
       const block = blocks[index]
@@ -102,6 +95,17 @@ export class Shx8800ProSession {
     const frame = await this.readFrame(address)
     this.log(`RX ${addressLabel(address)} ${hex(frame.slice(0, 8))} ...`)
     return frame
+  }
+
+  private async readBlocksInto(data: AppData) {
+    const addresses = getShx8800ProReadWriteAddresses()
+    for (let index = 0; index < addresses.length; index += 1) {
+      this.assertNotAborted()
+      const address = addresses[index]
+      this.progress('read', address, Math.round((index / addresses.length) * 100))
+      const frame = await this.readBlock(address)
+      applyBlockToAppData(data, address, frame)
+    }
   }
 
   private async writeBlock(address: number, payload: Uint8Array) {
@@ -214,7 +218,7 @@ export class Shx8800ProSession {
     const configurable = this.transport as RadioTransport & {
       configure?: (options: { packetSize?: number; writeMode?: 'with-response' | 'without-response'; interChunkDelayMs?: number }) => void
     }
-    configurable.configure?.({ packetSize: 18, writeMode: 'with-response', interChunkDelayMs: 20 })
+    configurable.configure?.({ packetSize: 18, writeMode: 'without-response', interChunkDelayMs: 20 })
   }
 
   private restoreBluetoothParameterPacket() {
