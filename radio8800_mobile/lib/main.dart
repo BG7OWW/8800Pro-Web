@@ -1558,6 +1558,27 @@ class _ToolsPageState extends State<ToolsPage> {
                       ),
                     ),
                     const SizedBox(height: 10),
+                    FormFieldCard(
+                      title: 'PTT ID',
+                      child: DropdownButtonFormField<int>(
+                        initialValue: store.data.dtmf.pttId
+                            .clamp(0, RadioChoices.pttId.length - 1)
+                            .toInt(),
+                        decoration: const InputDecoration(
+                          border: OutlineInputBorder(),
+                        ),
+                        items: List.generate(
+                          RadioChoices.pttId.length,
+                          (index) => DropdownMenuItem(
+                            value: index,
+                            child: Text(RadioChoices.pttId[index]),
+                          ),
+                        ),
+                        onChanged: (value) =>
+                            store.updateDtmf((dtmf) => dtmf.pttId = value ?? 0),
+                      ),
+                    ),
+                    const SizedBox(height: 10),
                     Row(
                       children: [
                         Expanded(
@@ -3908,6 +3929,7 @@ class DtmfSettings {
   DtmfSettings();
 
   String localId = '100';
+  int pttId = 0;
   int wordTime = 1;
   int idleTime = 1;
   List<String> groups = List.generate(15, (index) => '${101 + index}');
@@ -3918,6 +3940,7 @@ class DtmfSettings {
   factory DtmfSettings.fromJson(Map<String, dynamic> json) {
     final dtmf = DtmfSettings();
     dtmf.localId = json['localId'] as String? ?? dtmf.localId;
+    dtmf.pttId = json['pttId'] as int? ?? dtmf.pttId;
     dtmf.wordTime = json['wordTime'] as int? ?? dtmf.wordTime;
     dtmf.idleTime = json['idleTime'] as int? ?? dtmf.idleTime;
     dtmf.groups = (json['groups'] as List<dynamic>? ?? dtmf.groups)
@@ -3931,6 +3954,7 @@ class DtmfSettings {
 
   Map<String, dynamic> toJson() => {
     'localId': localId,
+    'pttId': pttId,
     'wordTime': wordTime,
     'idleTime': idleTime,
     'groups': groups,
@@ -6150,6 +6174,9 @@ class ShxCodec {
     switch (address) {
       case 0xa000:
         writeWord(0, data.dtmf.localId);
+        payload[6] = data.dtmf.pttId
+            .clamp(0, RadioChoices.pttId.length - 1)
+            .toInt();
         payload[7] = data.dtmf.wordTime;
         payload[8] = data.dtmf.idleTime;
         writeWord(32, data.dtmf.groups[0]);
@@ -6193,6 +6220,7 @@ class ShxCodec {
     switch (address) {
       case 0xa000:
         data.dtmf.localId = readWord(0);
+        data.dtmf.pttId = payload[6] % RadioChoices.pttId.length;
         data.dtmf.wordTime = payload[7] % 16;
         data.dtmf.idleTime = payload[8] % 16;
         data.dtmf.groups[0] = readWord(32);

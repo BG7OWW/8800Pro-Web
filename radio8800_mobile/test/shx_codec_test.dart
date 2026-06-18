@@ -79,6 +79,29 @@ void main() {
     expect(decoded.channels[0][0].txTone, 'D754I');
   });
 
+  test('preserves DTMF PTT ID through json and radio blocks', () {
+    final data = RadioAppData.defaults();
+    data.dtmf.pttId = 3;
+    data.dtmf.wordTime = 5;
+    data.dtmf.idleTime = 7;
+
+    final restored = RadioAppData.fromJson(data.toJson());
+    expect(restored.dtmf.pttId, 3);
+
+    final block = ShxCodec.bluetoothWriteBlocks(
+      data,
+    ).firstWhere((item) => item.address == 0xa000);
+    expect(block.payload[6], 3);
+    expect(block.payload[7], 5);
+    expect(block.payload[8], 7);
+
+    final decoded = RadioAppData.defaults();
+    ShxCodec.applyBlock(decoded, block.address, block.payload);
+    expect(decoded.dtmf.pttId, 3);
+    expect(decoded.dtmf.wordTime, 5);
+    expect(decoded.dtmf.idleTime, 7);
+  });
+
   test('backup signatures ignore timestamp changes', () {
     final data = RadioAppData.defaults();
     expect(data.hasBackupContent, isFalse);
