@@ -1477,6 +1477,7 @@ class _ToolsPageState extends State<ToolsPage> {
                         BackupTile(
                           snapshot: snapshot,
                           onRestore: () => store.restoreBackup(snapshot.id),
+                          onDelete: () => store.deleteBackup(snapshot.id),
                         ),
                         const SizedBox(height: 10),
                       ],
@@ -1518,6 +1519,14 @@ class _ToolsPageState extends State<ToolsPage> {
                           ),
                         ),
                       ],
+                    if (store.logs.isNotEmpty) ...[
+                      const SizedBox(height: 10),
+                      ActionButton(
+                        label: '清空日志',
+                        icon: Icons.delete_outline_rounded,
+                        onPressed: store.clearLogs,
+                      ),
+                    ],
                   ],
                 ),
               ),
@@ -2655,6 +2664,26 @@ class MobileStore extends ChangeNotifier {
       data.channels[selectedBankIndex].length - 1,
     );
     _success('已恢复备份：${snapshot.title}');
+  }
+
+  void deleteBackup(String id) {
+    final index = backups.indexWhere((item) => item.id == id);
+    if (index < 0) {
+      _warning('没有找到这份备份');
+      return;
+    }
+    final title = backups[index].title;
+    backups.removeAt(index);
+    unawaited(_persistBackups());
+    _success('已删除备份：$title');
+  }
+
+  void clearLogs() {
+    logs
+      ..clear()
+      ..add('${DateFormat('HH:mm:ss').format(DateTime.now())}  日志已清空');
+    notice = const NoticeMessage.success('日志已清空');
+    notifyListeners();
   }
 
   void applyRepeater(RepeaterEntry entry) {
@@ -4926,10 +4955,12 @@ class BackupTile extends StatelessWidget {
     super.key,
     required this.snapshot,
     required this.onRestore,
+    required this.onDelete,
   });
 
   final RadioSnapshot snapshot;
   final VoidCallback onRestore;
+  final VoidCallback onDelete;
 
   @override
   Widget build(BuildContext context) {
@@ -4960,6 +4991,11 @@ class BackupTile extends StatelessWidget {
                   ),
                 ],
               ),
+            ),
+            IconButton(
+              tooltip: '删除备份',
+              icon: const Icon(Icons.delete_outline_rounded),
+              onPressed: onDelete,
             ),
             const Icon(Icons.restore_rounded),
           ],

@@ -3,8 +3,13 @@ import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
 import 'package:radio8800_mobile/main.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
 void main() {
+  setUp(() {
+    SharedPreferences.setMockInitialValues({});
+  });
+
   test('starts with an empty codeplug by default', () {
     final data = RadioAppData.defaults();
 
@@ -210,4 +215,32 @@ void main() {
       expect(channel.busyLock, 1);
     },
   );
+
+  test('deletes a selected backup snapshot', () {
+    final store = MobileStore();
+    store.backups.add(
+      RadioSnapshot(
+        id: 'a',
+        title: '手动备份',
+        createdAt: DateTime(2026, 6, 18),
+        data: RadioAppData.defaults(),
+      ),
+    );
+
+    store.deleteBackup('a');
+
+    expect(store.backups, isEmpty);
+    expect(store.notice?.text, contains('已删除备份'));
+  });
+
+  test('clears logs and leaves a clear marker', () {
+    final store = MobileStore();
+    store.logs.addAll(['old 1', 'old 2']);
+
+    store.clearLogs();
+
+    expect(store.logs.length, 1);
+    expect(store.logs.first, contains('日志已清空'));
+    expect(store.notice?.text, '日志已清空');
+  });
 }
