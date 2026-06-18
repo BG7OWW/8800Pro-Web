@@ -6,6 +6,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_blue_plus/flutter_blue_plus.dart';
 import 'package:intl/intl.dart';
+import 'package:permission_handler/permission_handler.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 void main() {
@@ -1953,6 +1954,11 @@ class MobileStore extends ChangeNotifier {
     linkState = const LinkState.scanning();
     notifyListeners();
 
+    final permissionsReady = await _ensureBluetoothPermissions();
+    if (!permissionsReady) {
+      return;
+    }
+
     final adapterState = await FlutterBluePlus.adapterState.first;
     if (adapterState != BluetoothAdapterState.on) {
       _warning('蓝牙未开启，请先打开手机蓝牙');
@@ -1987,6 +1993,40 @@ class MobileStore extends ChangeNotifier {
     } catch (_) {
       _warning('扫描超时，请确认对讲机蓝牙已开启');
     }
+  }
+
+  Future<bool> _ensureBluetoothPermissions() async {
+    final requests = <Permission>[
+      Permission.bluetoothScan,
+      Permission.bluetoothConnect,
+      Permission.locationWhenInUse,
+    ];
+
+    final statuses = await requests.request();
+    final scan = statuses[Permission.bluetoothScan];
+    final connect = statuses[Permission.bluetoothConnect];
+    final location = statuses[Permission.locationWhenInUse];
+    final bluetoothGranted =
+        (scan == null || scan.isGranted || scan.isLimited) &&
+        (connect == null || connect.isGranted || connect.isLimited);
+    final legacyLocationGranted =
+        location == null || location.isGranted || location.isLimited;
+
+    if (bluetoothGranted || legacyLocationGranted) {
+      return true;
+    }
+
+    final permanentlyDenied = statuses.values.any(
+      (status) => status.isPermanentlyDenied,
+    );
+    if (permanentlyDenied) {
+      _warning('蓝牙权限被永久拒绝，请到系统设置里允许蓝牙和位置权限。');
+      await openAppSettings();
+      return false;
+    }
+
+    _warning('需要蓝牙和位置权限才能扫描对讲机。');
+    return false;
   }
 
   Future<void> _connectToDevice(BluetoothDevice device) async {
