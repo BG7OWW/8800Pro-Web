@@ -26,4 +26,16 @@ void main() {
     expect(decoded.channels[0][0].name, '梧桐山');
     expect(decoded.bankNames[0], '区域一ABC');
   });
+
+  test('fills empty bank name slots with FF when no raw block exists', () {
+    final data = RadioAppData.defaults();
+    data.bankNames[1] = '';
+
+    final block = ShxCodec.bluetoothWriteBlocks(
+      data,
+    ).firstWhere((item) => item.address == ShxCodec.bankNameAAddress);
+    final emptySlot = block.payload.sublist(16, 28);
+
+    expect(emptySlot.every((byte) => byte == 0xff), isTrue);
+  });
 }

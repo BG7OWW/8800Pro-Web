@@ -1332,21 +1332,17 @@ class _ToolsPageState extends State<ToolsPage> {
                   children: [
                     const SectionHeader(
                       title: '开机图',
-                      subtitle: '写图协议会沿用网页端已经验证过的那套逻辑。',
+                      subtitle: '图片选择、RGB565 转换和专用写图协议正在开发中。',
                     ),
                     const SizedBox(height: 12),
-                    FormFieldCard(
-                      title: '当前图片备注',
-                      child: TextFormField(
-                        key: ValueKey('boot-${store.data.bootImage.name}'),
-                        initialValue: store.data.bootImage.name,
-                        decoration: const InputDecoration(
-                          border: OutlineInputBorder(),
-                          hintText: '例如：BG7OWW 头像',
-                        ),
-                        onChanged: (value) => store.updateBootImage(
-                          (image) => image.name = value,
-                        ),
+                    const FormFieldCard(
+                      title: '状态',
+                      child: Row(
+                        children: [
+                          Icon(Icons.construction_rounded),
+                          SizedBox(width: 10),
+                          Expanded(child: Text('开发中，暂时不可写入开机图。')),
+                        ],
                       ),
                     ),
                     const SizedBox(height: 10),
@@ -2871,7 +2867,7 @@ class BootImageDraft {
   BootImageDraft();
 
   String name = '';
-  String previewNote = '待接入图片选择、RGB565 转换和写图进度显示。';
+  String previewNote = '开发中：后续会接入图片选择、128x128 裁切、RGB565 转换和写图进度显示。';
 
   BootImageDraft copy() => BootImageDraft.fromJson(toJson());
 
@@ -4713,11 +4709,16 @@ class ShxCodec {
     int address,
     Uint8List base,
   ) {
-    final payload = Uint8List.fromList(base);
+    final hasRawBlock = data.rawBlocks[_blockKey(address)]?.length == 64;
+    final payload = hasRawBlock
+        ? Uint8List.fromList(base)
+        : (Uint8List(64)..fillRange(0, 64, 0xff));
     final start = address == bankNameAAddress ? 0 : 4;
     for (var index = 0; index < 4; index += 1) {
       final offset = index * 16;
       final name = data.bankNames[start + index].trim();
+      final currentName = hasRawBlock ? _decodeText(payload, offset, 12) : '';
+      if (hasRawBlock && (name.isEmpty || name == currentName)) continue;
       if (name.isEmpty) continue;
       payload.setRange(
         offset,
