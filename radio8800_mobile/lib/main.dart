@@ -3873,22 +3873,42 @@ class RadioFunctionSettings {
   RadioFunctionSettings();
 
   int sql = 3;
-  int backlight = 3;
+  int saveMode = 1;
+  int vox = 1;
+  int backlight = 5;
   int dualStandby = 0;
+  int tot = 2;
   int beep = 1;
   int voice = 1;
+  int sideTone = 0;
   int scanMode = 1;
+  int pttDelay = 4;
   int chADisplay = 0;
   int chBDisplay = 0;
-  int autoLock = 1;
+  int autoLock = 2;
+  int alarmMode = 0;
+  int localSosTone = 1;
+  int tailClear = 1;
+  int rptTailClear = 5;
+  int rptTailDetect = 5;
+  int roger = 0;
+  int fmEnable = 0;
   int chAWorkmode = 0;
   int chBWorkmode = 0;
+  int keyLock = 0;
   int powerOnDisplay = 2;
+  int tone = 2;
+  int voxDelay = 5;
+  int menuQuitTime = 1;
   int micGain = 1;
-  int currentBankA = 1;
-  int currentBankB = 1;
-  int bluetoothAudioGain = 1;
-  int bluetoothMicGain = 1;
+  int powerOnDelay = 0;
+  int voxSwitch = 0;
+  int key2Short = 0;
+  int key2Long = 1;
+  int currentBankA = 0;
+  int currentBankB = 0;
+  int bluetoothAudioGain = 2;
+  int bluetoothMicGain = 2;
   String callSign = '';
 
   RadioFunctionSettings copy() => RadioFunctionSettings.fromJson(toJson());
@@ -3896,19 +3916,44 @@ class RadioFunctionSettings {
   factory RadioFunctionSettings.fromJson(Map<String, dynamic> json) {
     final settings = RadioFunctionSettings();
     settings.sql = json['sql'] as int? ?? settings.sql;
+    settings.saveMode = json['saveMode'] as int? ?? settings.saveMode;
+    settings.vox = json['vox'] as int? ?? settings.vox;
     settings.backlight = json['backlight'] as int? ?? settings.backlight;
     settings.dualStandby = json['dualStandby'] as int? ?? settings.dualStandby;
+    settings.tot = json['tot'] as int? ?? settings.tot;
     settings.beep = json['beep'] as int? ?? settings.beep;
     settings.voice = json['voice'] as int? ?? settings.voice;
+    settings.sideTone = json['sideTone'] as int? ?? settings.sideTone;
     settings.scanMode = json['scanMode'] as int? ?? settings.scanMode;
+    settings.pttDelay = json['pttDelay'] as int? ?? settings.pttDelay;
     settings.chADisplay = json['chADisplay'] as int? ?? settings.chADisplay;
     settings.chBDisplay = json['chBDisplay'] as int? ?? settings.chBDisplay;
     settings.autoLock = json['autoLock'] as int? ?? settings.autoLock;
+    settings.alarmMode = json['alarmMode'] as int? ?? settings.alarmMode;
+    settings.localSosTone =
+        json['localSosTone'] as int? ?? settings.localSosTone;
+    settings.tailClear = json['tailClear'] as int? ?? settings.tailClear;
+    settings.rptTailClear =
+        json['rptTailClear'] as int? ?? settings.rptTailClear;
+    settings.rptTailDetect =
+        json['rptTailDetect'] as int? ?? settings.rptTailDetect;
+    settings.roger = json['roger'] as int? ?? settings.roger;
+    settings.fmEnable = json['fmEnable'] as int? ?? settings.fmEnable;
     settings.chAWorkmode = json['chAWorkmode'] as int? ?? settings.chAWorkmode;
     settings.chBWorkmode = json['chBWorkmode'] as int? ?? settings.chBWorkmode;
+    settings.keyLock = json['keyLock'] as int? ?? settings.keyLock;
     settings.powerOnDisplay =
         json['powerOnDisplay'] as int? ?? settings.powerOnDisplay;
+    settings.tone = json['tone'] as int? ?? settings.tone;
+    settings.voxDelay = json['voxDelay'] as int? ?? settings.voxDelay;
+    settings.menuQuitTime =
+        json['menuQuitTime'] as int? ?? settings.menuQuitTime;
     settings.micGain = json['micGain'] as int? ?? settings.micGain;
+    settings.powerOnDelay =
+        json['powerOnDelay'] as int? ?? settings.powerOnDelay;
+    settings.voxSwitch = json['voxSwitch'] as int? ?? settings.voxSwitch;
+    settings.key2Short = json['key2Short'] as int? ?? settings.key2Short;
+    settings.key2Long = json['key2Long'] as int? ?? settings.key2Long;
     settings.currentBankA =
         json['currentBankA'] as int? ?? settings.currentBankA;
     settings.currentBankB =
@@ -3923,18 +3968,38 @@ class RadioFunctionSettings {
 
   Map<String, dynamic> toJson() => {
     'sql': sql,
+    'saveMode': saveMode,
+    'vox': vox,
     'backlight': backlight,
     'dualStandby': dualStandby,
+    'tot': tot,
     'beep': beep,
     'voice': voice,
+    'sideTone': sideTone,
     'scanMode': scanMode,
+    'pttDelay': pttDelay,
     'chADisplay': chADisplay,
     'chBDisplay': chBDisplay,
     'autoLock': autoLock,
+    'alarmMode': alarmMode,
+    'localSosTone': localSosTone,
+    'tailClear': tailClear,
+    'rptTailClear': rptTailClear,
+    'rptTailDetect': rptTailDetect,
+    'roger': roger,
+    'fmEnable': fmEnable,
     'chAWorkmode': chAWorkmode,
     'chBWorkmode': chBWorkmode,
+    'keyLock': keyLock,
     'powerOnDisplay': powerOnDisplay,
+    'tone': tone,
+    'voxDelay': voxDelay,
+    'menuQuitTime': menuQuitTime,
     'micGain': micGain,
+    'powerOnDelay': powerOnDelay,
+    'voxSwitch': voxSwitch,
+    'key2Short': key2Short,
+    'key2Long': key2Long,
     'currentBankA': currentBankA,
     'currentBankB': currentBankB,
     'bluetoothAudioGain': bluetoothAudioGain,
@@ -5826,19 +5891,39 @@ class ShxCodec {
     if (address == functionAddress) {
       final f = data.functions;
       f.sql = payload[0] % 10;
+      f.saveMode = payload[1] % 4;
+      f.vox = payload[2] % 10;
       f.backlight = payload[3] % 9;
       f.dualStandby = payload[4] % 2;
+      f.tot = payload[5] % 9;
       f.beep = payload[6] % 2;
       f.voice = payload[7] % 2;
+      f.sideTone = payload[9] % 4;
       f.scanMode = payload[10] % 3;
       data.vfoPttId = payload[11] % RadioChoices.pttId.length;
+      f.pttDelay = payload[12] % 16;
       f.chADisplay = payload[13] % 3;
       f.chBDisplay = payload[14] % 3;
       f.autoLock = payload[16] % 7;
-      f.chAWorkmode = payload[26] & 0x0f;
-      f.chBWorkmode = (payload[26] >> 4) & 0x0f;
+      f.alarmMode = payload[17] % 3;
+      f.localSosTone = payload[18] % 2;
+      f.tailClear = payload[20] % 2;
+      f.rptTailClear = payload[21] % 11;
+      f.rptTailDetect = payload[22] % 11;
+      f.roger = payload[23] % 2;
+      f.fmEnable = payload[25] % 2;
+      f.chAWorkmode = (payload[26] & 0x0f) % 2;
+      f.chBWorkmode = ((payload[26] >> 4) & 0x0f) % 2;
+      f.keyLock = payload[27] % 2;
       f.powerOnDisplay = payload[28] % 22;
+      f.tone = payload[30] % 4;
+      f.voxDelay = payload[32] % 16;
+      f.menuQuitTime = payload[33] % 11;
       f.micGain = payload[34] % 3;
+      f.powerOnDelay = payload[36] % 15;
+      f.voxSwitch = payload[37] % 2;
+      f.key2Short = payload[42] % 5;
+      f.key2Long = payload[43] % 5;
       f.currentBankA = payload[46] % 8;
       f.currentBankB = payload[47] % 8;
       f.bluetoothMicGain = payload[49] % 5;
@@ -5951,20 +6036,40 @@ class ShxCodec {
     if (address == functionAddress) {
       final f = data.functions;
       payload[0] = f.sql;
+      payload[1] = f.saveMode;
+      payload[2] = f.vox;
       payload[3] = f.backlight;
       payload[4] = f.dualStandby;
+      payload[5] = f.tot;
       payload[6] = f.beep;
       payload[7] = f.voice;
+      payload[9] = f.sideTone;
       payload[10] = f.scanMode;
       payload[11] = data.vfoPttId
           .clamp(0, RadioChoices.pttId.length - 1)
           .toInt();
+      payload[12] = f.pttDelay;
       payload[13] = f.chADisplay;
       payload[14] = f.chBDisplay;
       payload[16] = f.autoLock;
+      payload[17] = f.alarmMode;
+      payload[18] = f.localSosTone;
+      payload[20] = f.tailClear;
+      payload[21] = f.rptTailClear;
+      payload[22] = f.rptTailDetect;
+      payload[23] = f.roger;
+      payload[25] = f.fmEnable;
       payload[26] = f.chAWorkmode | (f.chBWorkmode << 4);
+      payload[27] = f.keyLock;
       payload[28] = f.powerOnDisplay;
+      payload[30] = f.tone;
+      payload[32] = f.voxDelay;
+      payload[33] = f.menuQuitTime;
       payload[34] = f.micGain;
+      payload[36] = f.powerOnDelay;
+      payload[37] = f.voxSwitch;
+      payload[42] = f.key2Short;
+      payload[43] = f.key2Long;
       payload[46] = f.currentBankA;
       payload[47] = f.currentBankB;
       payload[49] = f.bluetoothMicGain;

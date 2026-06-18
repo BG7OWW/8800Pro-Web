@@ -163,6 +163,101 @@ void main() {
     expect(decoded.vfoBStep, 3);
   });
 
+  test('preserves full function settings block like the iOS codec', () {
+    final data = RadioAppData.defaults()..vfoPttId = 3;
+    data.functions
+      ..sql = 7
+      ..saveMode = 2
+      ..vox = 4
+      ..backlight = 6
+      ..dualStandby = 1
+      ..tot = 8
+      ..beep = 0
+      ..voice = 1
+      ..sideTone = 3
+      ..scanMode = 2
+      ..pttDelay = 9
+      ..chADisplay = 1
+      ..chBDisplay = 2
+      ..autoLock = 6
+      ..alarmMode = 2
+      ..localSosTone = 1
+      ..tailClear = 1
+      ..rptTailClear = 10
+      ..rptTailDetect = 9
+      ..roger = 1
+      ..fmEnable = 1
+      ..chAWorkmode = 1
+      ..chBWorkmode = 0
+      ..keyLock = 1
+      ..powerOnDisplay = 12
+      ..tone = 3
+      ..voxDelay = 14
+      ..menuQuitTime = 10
+      ..micGain = 2
+      ..powerOnDelay = 13
+      ..voxSwitch = 1
+      ..key2Short = 4
+      ..key2Long = 3
+      ..currentBankA = 6
+      ..currentBankB = 7
+      ..bluetoothMicGain = 4
+      ..bluetoothAudioGain = 3;
+
+    final restored = RadioAppData.fromJson(data.toJson());
+    expect(restored.functions.rptTailClear, 10);
+    expect(restored.functions.key2Long, 3);
+    expect(restored.functions.fmEnable, 1);
+
+    final block = ShxCodec.bluetoothWriteBlocks(
+      data,
+    ).firstWhere((item) => item.address == ShxCodec.functionAddress);
+
+    expect(block.payload[1], 2);
+    expect(block.payload[2], 4);
+    expect(block.payload[5], 8);
+    expect(block.payload[9], 3);
+    expect(block.payload[11], 3);
+    expect(block.payload[12], 9);
+    expect(block.payload[17], 2);
+    expect(block.payload[18], 1);
+    expect(block.payload[20], 1);
+    expect(block.payload[21], 10);
+    expect(block.payload[22], 9);
+    expect(block.payload[23], 1);
+    expect(block.payload[25], 1);
+    expect(block.payload[26], 1);
+    expect(block.payload[27], 1);
+    expect(block.payload[30], 3);
+    expect(block.payload[32], 14);
+    expect(block.payload[33], 10);
+    expect(block.payload[36], 13);
+    expect(block.payload[37], 1);
+    expect(block.payload[42], 4);
+    expect(block.payload[43], 3);
+
+    final decoded = RadioAppData.defaults();
+    ShxCodec.applyBlock(decoded, ShxCodec.functionAddress, block.payload);
+    expect(decoded.vfoPttId, 3);
+    expect(decoded.functions.saveMode, 2);
+    expect(decoded.functions.vox, 4);
+    expect(decoded.functions.tot, 8);
+    expect(decoded.functions.sideTone, 3);
+    expect(decoded.functions.pttDelay, 9);
+    expect(decoded.functions.alarmMode, 2);
+    expect(decoded.functions.rptTailClear, 10);
+    expect(decoded.functions.rptTailDetect, 9);
+    expect(decoded.functions.fmEnable, 1);
+    expect(decoded.functions.keyLock, 1);
+    expect(decoded.functions.tone, 3);
+    expect(decoded.functions.voxDelay, 14);
+    expect(decoded.functions.menuQuitTime, 10);
+    expect(decoded.functions.powerOnDelay, 13);
+    expect(decoded.functions.voxSwitch, 1);
+    expect(decoded.functions.key2Short, 4);
+    expect(decoded.functions.key2Long, 3);
+  });
+
   test('backup signatures ignore timestamp changes', () {
     final data = RadioAppData.defaults();
     expect(data.hasBackupContent, isFalse);
