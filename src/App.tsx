@@ -34,7 +34,7 @@ import { CHANNEL_CHOICES, DTMF_CHOICES, FUNCTION_CHOICES, TONE_CHOICES, VFO_CHOI
 import { SHX8800PRO } from './core/constants/memory-map'
 import { normalizeRadioFrequency } from './core/codec/frequency'
 import { countVisibleChannels, createDefaultAppData, createEmptyChannel, cloneAppData, type AppData, type Channel, type FunctionSettings } from './core/models/radio'
-import { Shx8800ProSession, type SessionProgress } from './core/protocol/shx8800pro-session'
+import { Shx8800ProSession, type BluetoothWriteMode, type SessionProgress } from './core/protocol/shx8800pro-session'
 import { WebBluetoothTransport } from './transport/web-bluetooth-transport'
 import { WebSerialTransport } from './transport/web-serial-transport'
 import type { RadioTransport } from './transport/transport'
@@ -92,6 +92,7 @@ function App() {
   const [channelEditorResetKey, setChannelEditorResetKey] = useState(0)
   const [baselineData, setBaselineData] = useState<AppData>(() => cloneAppData(createDefaultAppData()))
   const [diffReviewMode, setDiffReviewMode] = useState<'write' | 'view' | null>(null)
+  const [pendingWriteMode, setPendingWriteMode] = useState<BluetoothWriteMode>('official')
   const abortRef = useRef<AbortController | null>(null)
   const busyRef = useRef(false)
   const reconnectingRef = useRef(false)
@@ -146,13 +147,26 @@ function App() {
     if (!transport) return
     let cancelled = false
 
+    const validateTransportHealthy = async () => {
+      if (!transport.isConnected()) return false
+      if (transport.kind !== 'serial') return true
+      try {
+        await new Shx8800ProSession(transport).validateConnection()
+        return true
+      } catch (error) {
+        const message = error instanceof Error ? error.message : '未知错误'
+        addLog(`USB 握手校验失败：${message}`)
+        return false
+      }
+    }
+
     const syncConnection = async () => {
       if (cancelled || manualDisconnectRef.current || reconnectingRef.current) return
-      if (transport.isConnected()) {
+      if (busyRef.current) return
+      if (await validateTransportHealthy()) {
         setReconnectAttempt(0)
         return
       }
-      if (busyRef.current) return
       if (!transport.reopen) {
         markDisconnected('设备断开连接，当前状态已切换为未连接。')
         return
@@ -164,9 +178,9 @@ function App() {
         setNotice({ tone: 'warn', text: `设备临时断开，正在自动重连（${attempt}/3）。` })
         addLog(`设备断开，正在自动重连（${attempt}/3）`)
         try {
-          await wait(attempt === 1 ? 650 : 1200)
+          await wait(1500)
           await transport.reopen()
-          if (transport.isConnected()) {
+          if (await validateTransportHealthy()) {
             setReconnectAttempt(0)
             setNotice({ tone: 'ok', text: '设备已自动重连，可以继续读频或写频。' })
             addLog('设备已自动重连')
@@ -193,7 +207,7 @@ function App() {
     }
 
     void syncConnection()
-    const timer = window.setInterval(() => void syncConnection(), 1000)
+    const timer = window.setInterval(() => void syncConnection(), 1500)
     return () => {
       cancelled = true
       window.clearInterval(timer)
@@ -280,15 +294,16 @@ function App() {
     })
   }
 
-  async function writeRadio() {
+  async function writeRadio(mode: BluetoothWriteMode = 'official') {
+    setPendingWriteMode(mode)
     if (diffSummary.totalChanges > 0) {
       setDiffReviewMode('write')
       return
     }
-    await performWriteRadio()
+    await performWriteRadio(mode)
   }
 
-  async function performWriteRadio() {
+  async function performWriteRadio(mode: BluetoothWriteMode = 'official') {
     if (!transport) return
     await withBusy(async () => {
       await saveBackup(data, '写频前自动备份')
@@ -299,6 +314,7 @@ function App() {
         signal: abort.signal,
         onLog: addLog,
         onProgress: setProgress,
+        bluetoothWriteMode: transport.kind === 'bluetooth' ? mode : 'official',
       })
       await session.writeRadio(data)
       setNotice({ tone: 'ok', text: `${transport.kind === 'bluetooth' ? '蓝牙' : 'USB'} 写频完成。建议再点一次“读频”确认机器内容。` })
@@ -437,10 +453,10 @@ function App() {
           </div>
         )}
         <div className="sidebar-footer">
-          <button type="button" className="about-card" onClick={() => switchView('about')}>
+          <a className="about-card" href="/about/">
             <strong>BG7OWW</strong>
             <SquareArrowOutUpRight size={16} />
-          </button>
+          </a>
           {showBeian ? (
             <div className="beian-links">
               <a href="https://beian.miit.gov.cn/" rel="noreferrer" target="_blank">
@@ -462,29 +478,34 @@ function App() {
             <p>网页多功能控制台</p>
           </div>
           <div className="connection-strip">
-            <button type="button" className="icon-button" onClick={connectSerial} disabled={busy || !stats.serialSupported}>
-              <Cable size={18} />
-              USB
-            </button>
-            <button type="button" className="icon-button" onClick={connectBluetooth} disabled={busy || !stats.bluetoothSupported}>
-              <Bluetooth size={18} />
-              蓝牙
-            </button>
             <button type="button" className="primary-button" onClick={readRadio} disabled={busy || !transport}>
               <FileDown size={18} />
               读频
             </button>
-            <button type="button" className="primary-button warn" onClick={writeRadio} disabled={busy || !transport}>
-              <Upload size={18} />
-              写频
-            </button>
+            {transport?.kind === 'bluetooth' ? (
+              <>
+                <button type="button" className="primary-button warn" onClick={() => void writeRadio('official')} disabled={busy || !transport}>
+                  <Upload size={18} />
+                  常规写频
+                </button>
+                <button type="button" className="primary-button fast" onClick={() => void writeRadio('legacy')} disabled={busy || !transport}>
+                  <Waves size={18} />
+                  快速写频
+                </button>
+              </>
+            ) : (
+              <button type="button" className="primary-button warn" onClick={() => void writeRadio('official')} disabled={busy || !transport}>
+                <Upload size={18} />
+                写频
+              </button>
+            )}
             {busy ? (
               <button type="button" className="ghost-button" onClick={cancelOperation}>
                 取消
               </button>
             ) : (
               <button type="button" className="ghost-button" onClick={disconnect} disabled={!transport}>
-                断开
+                断开连接
               </button>
             )}
           </div>
@@ -541,10 +562,12 @@ function App() {
         open={diffReviewMode !== null}
         mode={diffReviewMode}
         summary={diffSummary}
+        confirmLabel={pendingWriteMode === 'legacy' ? '确认快速写频' : '确认写频'}
+        confirmTone={pendingWriteMode === 'legacy' ? 'fast' : 'warn'}
         onClose={() => setDiffReviewMode(null)}
         onConfirm={() => {
           setDiffReviewMode(null)
-          void performWriteRadio()
+          void performWriteRadio(pendingWriteMode)
         }}
       />
     </div>
@@ -633,12 +656,16 @@ function DiffReviewDialog({
   open,
   mode,
   summary,
+  confirmLabel,
+  confirmTone,
   onClose,
   onConfirm,
 }: {
   open: boolean
   mode: 'write' | 'view' | null
   summary: AppDataDiffSummary
+  confirmLabel: string
+  confirmTone: 'warn' | 'fast'
   onClose: () => void
   onConfirm: () => void
 }) {
@@ -658,9 +685,9 @@ function DiffReviewDialog({
         <DiffSummaryBody summary={summary} />
         <div className="diff-footer">
           {isWrite ? (
-            <button type="button" className="primary-button warn" onClick={onConfirm}>
-              <Upload size={18} />
-              确认写频
+            <button type="button" className={`primary-button ${confirmTone}`} onClick={onConfirm}>
+              {confirmTone === 'fast' ? <Waves size={18} /> : <Upload size={18} />}
+              {confirmLabel}
             </button>
           ) : null}
         </div>
@@ -768,7 +795,7 @@ function Dashboard({
 }) {
   const occupiedBanks = data.channels.map((bank) => bank.filter((channel) => channel.visible).length)
   const quickStartSteps = [
-    ['1. 连接设备', '第一次建议先读频并自动备份。USB 和蓝牙都可读写，蓝牙会按完整 68 字节帧写入。', '直接点右上角 USB 或 蓝牙。'],
+    ['1. 连接设备', '第一次建议先读频并自动备份。USB 和蓝牙都可读写，蓝牙会按官方 0x80 原生块写入。', '直接点右上角 USB 或 蓝牙。'],
     ['2. 先点读频', '把手台里原本的数据读出来，系统会自动留原机备份。', '读频完成后再修改。'],
     ['3. 去信道页改内容', '新手最常用的是信道名称、接收频率、发射频率、亚音。', '不会的字段先保持默认。'],
     ['4. 先试一个信道', '先只改 1 个信道测试，确认设备工作正常。', '没问题后再批量修改。'],
@@ -1096,7 +1123,8 @@ function ChannelEditor({
   }
 
   return (
-    <div className="feature-grid channel-layout">
+    <div className="channel-page">
+      <div className="feature-grid channel-layout">
       <section className="panel bank-panel">
         <div className="panel-heading">
           <div>
@@ -1237,6 +1265,7 @@ function ChannelEditor({
           <button type="button" className="ghost-button" onClick={compactBank}>整理空信道</button>
         </div>
       </section>
+      </div>
       <section className="panel repeater-panel wide">
         <button
           type="button"
@@ -1419,6 +1448,7 @@ function VfoPanel({ data, setData }: DataPanelProps) {
     { key: 'vfoARxTone', label: 'A 接收亚音', type: 'tone' },
     { key: 'vfoATxTone', label: 'A 发射亚音', type: 'tone' },
     { key: 'vfoATxPower', label: 'A 功率', type: 'power' },
+    { key: 'vfoAScramble', label: 'A 加扰', type: 'scramble' },
     { key: 'vfoABandwidth', label: 'A 带宽', type: 'bandwidth' },
     { key: 'vfoAStep', label: 'A 步进', type: 'step' },
     { key: 'vfoABusyLock', label: 'A 繁忙锁', type: 'onoff' },
@@ -1429,6 +1459,7 @@ function VfoPanel({ data, setData }: DataPanelProps) {
     { key: 'vfoBRxTone', label: 'B 接收亚音', type: 'tone' },
     { key: 'vfoBTxTone', label: 'B 发射亚音', type: 'tone' },
     { key: 'vfoBTxPower', label: 'B 功率', type: 'power' },
+    { key: 'vfoBScramble', label: 'B 加扰', type: 'scramble' },
     { key: 'vfoBBandwidth', label: 'B 带宽', type: 'bandwidth' },
     { key: 'vfoBStep', label: 'B 步进', type: 'step' },
     { key: 'vfoBBusyLock', label: 'B 繁忙锁', type: 'onoff' },
@@ -1481,6 +1512,7 @@ function DynamicVfoField({
   if (field.type === 'onoff') return <SelectIndex label={field.label} value={Number(value)} options={CHANNEL_CHOICES.busyLock} onChange={(next) => update(field.key, next)} />
   if (field.type === 'signal') return <SelectIndex label={field.label} value={Number(value)} options={CHANNEL_CHOICES.signalGroup} onChange={(next) => update(field.key, next)} />
   if (field.type === 'direction') return <SelectIndex label={field.label} value={Number(value)} options={VFO_CHOICES.direction} onChange={(next) => update(field.key, next)} />
+  if (field.type === 'scramble') return <SelectIndex label={field.label} value={Number(value)} options={VFO_CHOICES.scramble} onChange={(next) => update(field.key, next)} />
   return <TextField label={field.label} value={String(value)} onChange={(next) => update(field.key, next)} />
 }
 
@@ -1515,8 +1547,8 @@ const settingFields: Array<{ key: keyof FunctionSettings; label: string; options
   { key: 'chBDisplay', label: 'B 显示', options: FUNCTION_CHOICES.displayType },
   { key: 'chAWorkmode', label: 'A 工作模式', options: FUNCTION_CHOICES.workMode },
   { key: 'chBWorkmode', label: 'B 工作模式', options: FUNCTION_CHOICES.workMode },
-  { key: 'key2Short', label: '2 键短按', options: FUNCTION_CHOICES.keyFunc },
-  { key: 'key2Long', label: '2 键长按', options: FUNCTION_CHOICES.keyFunc },
+  { key: 'key2Short', label: '侧键短按', options: FUNCTION_CHOICES.keyFunc },
+  { key: 'key2Long', label: '侧键长按', options: FUNCTION_CHOICES.keyFunc },
   { key: 'rptTailClear', label: '中继尾音消除', options: FUNCTION_CHOICES.rptTail },
   { key: 'rptTailDetect', label: '中继尾音检测', options: FUNCTION_CHOICES.rptTail },
   { key: 'powerOnDelay', label: '开机图时长', options: FUNCTION_CHOICES.powerUpDisplayTime },
@@ -1579,6 +1611,16 @@ function SettingsPanel({ data, setData }: DataPanelProps) {
     setSaveState('已修改，当前配置已更新')
   }
 
+  function updatePttId(value: number) {
+    setData((current) => {
+      const next = cloneAppData(current)
+      next.vfos = { ...next.vfos, pttid: value }
+      next.updatedAt = new Date().toISOString()
+      return next
+    })
+    setSaveState('已修改，当前配置已更新')
+  }
+
   async function saveCurrentSettings() {
     await saveBackup(data, '功能设置手动保存')
     setSaveState('已手动保存一份备份')
@@ -1604,6 +1646,7 @@ function SettingsPanel({ data, setData }: DataPanelProps) {
         <div className="settings-topbar">
           <TextField label="搜索设置" value={search} onChange={setSearch} compact />
           <TextField label="呼号" value={data.functions.callSign} onChange={(value) => update('callSign', value.toUpperCase().replace(/[^0-9A-Z]/g, '').slice(0, 6))} compact />
+          <SelectIndex label="PTT-ID" value={data.vfos.pttid} options={VFO_CHOICES.pttid} onChange={updatePttId} compact />
           <label className="toggle-line">
             <input type="checkbox" checked={showTips} onChange={(event) => setShowTips(event.target.checked)} />
             显示设置说明
@@ -2178,8 +2221,8 @@ function AboutPanel() {
         <p>8800Pro Web 的写频链路不是照着一份完整文档做出来的，而是一步步从开源项目、官方写频软件、APK 行为和真实机器响应里拼出来的。最早只能确定这台机器大概使用森海克斯家族的写频习惯：进入编程模式、按地址读 64 字节内存块、再把同样长度的数据写回。真正困难的是，没有一份公开资料告诉我们每个字段在哪里、蓝牙和写频线是不是同一套协议、哪些字节能改、哪些字节必须保留。</p>
         <p>第一阶段是“找地图”。项目先参考社区开源实现，把信道、VFO、功能设置、DTMF、区域名称和 FM 收音机的大致地址范围标出来；再把每一次 USB 读频得到的原始块保存下来，对照网页里显示的频率、亚音、名称、区域和功能选项，一点点把二进制数据翻译成可编辑字段。频率是 BCD，中文名称是 GB2312，亚音和 DCS 又是另一套编码。看起来只是表单里几个输入框，背后每一个字段都要能往返编码，读出来和写回去必须一致。</p>
         <p>线写频部分相对像“修一条路”：通过 USB 串口反复对照握手、读块、写块和结束指令，确认 `PROGRAMSHXPU`、ACK、`52 addr 40` 读帧、`57 addr 40` 写帧和 64 字节数据区的关系。网页读频时会保存完整原始镜像，写回时只改已经识别的字段，暂时没完全命名的机器设置会尽量原样保留。这一点很关键，因为对讲机不是普通数据库，很多未知位一旦被清空，表面看不出来，实际机器状态可能已经变了。</p>
-        <p>蓝牙写频则更像在黑箱旁边一点点听回声。先要确认设备广播名和 FFE0/FFE1 特征值，再用 Web Bluetooth、CoreBluetooth 小脚本、APK 线索、官方 iOS 应用里的 RadioKit 框架和手台读回内容逐块比对。期间最大的陷阱，是浏览器能成功写入特征值并不等于机器按预期解释了这段数据；曾经出现过写完以后机器里冒出一串 `404.00657`、`412.00757` 的怪频率。最后通过实机读回定位到，污染不是随机数，而是 `57 addr 40` 这种帧头被当成信道数据写进了内存。</p>
-        <p>真正让蓝牙写频稳定下来的，是发现连续地址块和普通配置块不能用同一种发送方式：连续 `+0x40` 的双块必须只发一个 `57 addr 40` header，然后连续送两段 64 字节 payload；不连续的配置块才按完整 68 字节写帧发送。这个细节如果错了，ACK 可能仍然回来，但内存已经被写歪。现在协议层会专门区分连续信道块、DTMF 块和普通配置块，并配合写前备份、读回校验、空信道清理和原始字节保留，尽量让浏览器蓝牙写频接近官方 App 的稳定性。</p>
+        <p>蓝牙写频则更像在黑箱旁边一点点听回声。先要确认设备广播名和 FFE0/FFE1 特征值，再用 Web Bluetooth、CoreBluetooth 小脚本、APK 线索、官方 iOS 应用和手台读回内容逐块比对。期间最大的陷阱，是浏览器能成功写入特征值并不等于机器按预期解释了这段数据；曾经出现过写完以后机器里冒出一串 `404.00657`、`412.00757` 的怪频率。最后通过官方 Android APK 反编译和实机回读确认，8800Pro 蓝牙原生链路不是两个独立 `0x40` 块，而是 `52 addr 80` 读取、`57 addr 80 + 128 bytes` 写入。</p>
+        <p>现在蓝牙读写频默认按官方 APK 的 `0x80` 原生块运行：网页内部仍以 64 字节保存，蓝牙读到 128 字节后拆成两个内部块，写回时再合成一个官方 128 字节包，并交给浏览器按实际 GATT 能力分片发送。实机测试说明不能只跳到某个变化信道单独写入，所以“常规写频”会按官方地址表全量顺序写完所有 `0x80` 包，优先保证机器内存边界稳定。蓝牙连接时页面还会额外显示“快速写频”按钮，继续使用之前摸出来的 `0x40` 双块流式写法，方便小范围改动时实机对照。</p>
         <p>所以这个网页看起来只是一个安静的控制台，底下其实是一套围绕 8800Pro 内存块反复试错出来的专用工具：从开源项目得到第一张草图，从 APK 和官方软件里找行为线索，再用真实手台一遍遍读、写、回读、对比，直到线写频和蓝牙写频都能被同一套编解码器解释清楚。能把这件事放进网页里运行，靠的是社区资料、浏览器硬件 API、持续备份和大量实机验证叠在一起。</p>
 
         <h4>更新日志</h4>
@@ -2190,6 +2233,9 @@ function AboutPanel() {
           <p><strong>断线自动恢复</strong> 设备重启或短暂断开时会自动尝试重连 3 次，失败后才提示回到未连接状态。</p>
           <p><strong>信道名称保留</strong> 写回信道时优先保留原机名称字节，避免未修改名称时被空值或不同填充方式覆盖。</p>
           <p><strong>全局交互动效</strong> 增加连接页、面板、列表、按钮和进度条的动效，并遵循系统减少动态设置。</p>
+          <p><strong>官方 APK 链路同步</strong> 蓝牙常规写频切换为官方 Android APK 同款 `0x80` 原生块协议，并按地址表全量顺序写入，避免跳块写频。</p>
+          <p><strong>蓝牙双写频入口</strong> 蓝牙连接时顶部显示“常规写频”和“快速写频”两个按钮；USB 写频线连接时只显示常规写频入口。</p>
+          <p><strong>中继台布局修复</strong> 信道编辑区和中继台库改为上下独立布局，中继台展开后不再挤压信道编辑面板。</p>
           <p><strong>修复蓝牙写频帧污染</strong> 实机确认连续地址块必须使用 `header + data + data` 的流式写法；网页已停止给第二个连续块发送帧头，避免 `57 addr 40` 落入信道或 DTMF 数据。</p>
           <p><strong>官方链路对照</strong> 通过官方 iOS 应用的 RadioKit 框架和本地 CoreBluetooth 实机测试，确认 8800Pro 读写频主链路仍走 FFE1，FF31/FF32 不是普通读写块的替代通道。</p>
           <p><strong>回读保护</strong> 蓝牙写频完成后建议立即读频，页面会继续保留写频前自动备份，方便发现异常时回退。</p>

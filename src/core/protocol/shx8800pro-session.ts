@@ -1,8 +1,8 @@
-import { applyBlockToAppData, getBluetoothWriteBlocks, getWriteBlocks } from '../codec/shx8800pro-codec'
-import { SHX8800PRO, addressLabel, getShx8800ProReadWriteAddresses } from '../constants/memory-map'
+import { applyBlockToAppData, applyBluetoothBlockToAppData, getBluetoothWriteBlocks, getOfficialBluetoothWriteBlocks, getWriteBlocks } from '../codec/shx8800pro-codec'
+import { addressLabel, getShx8800ProBluetoothReadWriteAddresses, getShx8800ProReadWriteAddresses } from '../constants/memory-map'
 import type { AppData } from '../models/radio'
 import { cloneAppData, createDefaultAppData } from '../models/radio'
-import { ACK, asciiBytes, buildReadFrame, buildWriteFrame, hex } from './frame'
+import { ACK, asciiBytes, buildBluetoothReadFrame, buildBluetoothWriteFrame, buildReadFrame, buildWriteFrame, hex } from './frame'
 import type { RadioTransport } from '../../transport/transport'
 
 export interface SessionProgress {
@@ -12,12 +12,15 @@ export interface SessionProgress {
   percent: number
 }
 
+export type BluetoothWriteMode = 'official' | 'legacy'
+
 export interface SessionOptions {
   onProgress?: (progress: SessionProgress) => void
   onLog?: (line: string) => void
   signal?: AbortSignal
   bluetoothWritePairDelayMs?: number
   bluetoothAckSettleMs?: number
+  bluetoothWriteMode?: BluetoothWriteMode
 }
 
 export class Shx8800ProSession {
@@ -33,13 +36,18 @@ export class Shx8800ProSession {
     this.assertNotAborted()
     await this.handshake()
     const data = createDefaultAppData()
-    const addresses = getShx8800ProReadWriteAddresses()
+    const addresses = this.transport.kind === 'bluetooth' ? getShx8800ProBluetoothReadWriteAddresses() : getShx8800ProReadWriteAddresses()
     for (let index = 0; index < addresses.length; index += 1) {
       this.assertNotAborted()
       const address = addresses[index]
       this.progress('read', address, Math.round((index / addresses.length) * 100))
-      const frame = await this.readBlock(address)
-      applyBlockToAppData(data, address, frame)
+      if (this.transport.kind === 'bluetooth') {
+        const frame = await this.readBluetoothBlock(address)
+        applyBluetoothBlockToAppData(data, address, frame)
+      } else {
+        const frame = await this.readBlock(address)
+        applyBlockToAppData(data, address, frame)
+      }
     }
     await this.transport.write(new Uint8Array([0x45]))
     data.updatedAt = new Date().toISOString()
@@ -72,9 +80,44 @@ export class Shx8800ProSession {
   }
 
   private async writeRadioBluetooth(data: AppData) {
+    if (this.options.bluetoothWriteMode === 'legacy') {
+      await this.writeRadioBluetoothLegacy(data)
+      return
+    }
+    await this.writeRadioBluetoothOfficial(data)
+  }
+
+  private async writeRadioBluetoothOfficial(data: AppData) {
+    await this.handshake()
+    const blocks = getOfficialBluetoothWriteBlocks(data)
+    const total = blocks.length
+    this.log(`蓝牙官方全量顺序写入计划：${blocks.length} 个 0x80 数据块`)
+    for (let index = 0; index < blocks.length; index += 1) {
+      this.assertNotAborted()
+      const block = blocks[index]
+      this.progress('write', block.address, Math.round((index / total) * 100))
+      await this.writeBluetoothOfficialBlock(block.address, block.payload)
+      await this.readAck(
+        `蓝牙写入失败：${addressLabel(block.address)}`,
+        6000,
+      )
+      await sleep(this.options.bluetoothAckSettleMs ?? 25)
+    }
+    await this.transport.write(new Uint8Array([0x45]))
+    this.progress('done', undefined, 100)
+  }
+
+  private async writeBluetoothOfficialBlock(address: number, payload: Uint8Array) {
+    const frame = buildBluetoothWriteFrame(address, payload)
+    await this.transport.write(frame)
+    this.log(`TX BLE WRITE80 ${addressLabel(address)} ${hex(frame.slice(0, 8))} ...`)
+  }
+
+  private async writeRadioBluetoothLegacy(data: AppData) {
     await this.handshake()
     const blockPairs = groupBluetoothWritePairs(getBluetoothWriteBlocks(data))
     const total = blockPairs.length * 2
+    this.log(`蓝牙快速旧链路写入计划：${blockPairs.length} 组 0x40 数据块`)
     for (let index = 0; index < blockPairs.length; index += 1) {
       this.assertNotAborted()
       const [first, second] = blockPairs[index]
@@ -162,6 +205,15 @@ export class Shx8800ProSession {
     return frame
   }
 
+  private async readBluetoothBlock(address: number) {
+    const request = buildBluetoothReadFrame(address)
+    await this.transport.write(request)
+    this.log(`TX BLE READ80 ${addressLabel(address)} ${hex(request)}`)
+    const frame = await this.readFrame(address, 128)
+    this.log(`RX BLE80 ${addressLabel(address)} ${hex(frame.slice(0, 8))} ...`)
+    return frame
+  }
+
   private async writeBlock(address: number, payload: Uint8Array) {
     const frame = buildWriteFrame(address, payload)
     for (let attempt = 0; attempt < 5; attempt += 1) {
@@ -208,7 +260,7 @@ export class Shx8800ProSession {
     return new Uint8Array(bytes.slice(0, 16))
   }
 
-  private async readFrame(address: number) {
+  private async readFrame(address: number, length = 64) {
     const expectedHigh = (address >> 8) & 0xff
     const expectedLow = address & 0xff
     const deadline = Date.now() + 6000
@@ -218,9 +270,9 @@ export class Shx8800ProSession {
       if (!byte) continue
       window.push(byte[0])
       if (window.length > 4) window.shift()
-      if (window.length === 4 && window[0] === 0x52 && window[1] === expectedHigh && window[2] === expectedLow && window[3] === 0x40) {
-        const payload = await this.transport.read(64, Math.max(300, deadline - Date.now()))
-        const frame = new Uint8Array(68)
+      if (window.length === 4 && window[0] === 0x52 && window[1] === expectedHigh && window[2] === expectedLow && window[3] === length) {
+        const payload = await this.transport.read(length, Math.max(300, deadline - Date.now()))
+        const frame = new Uint8Array(4 + length)
         frame.set(window, 0)
         frame.set(payload, 4)
         return frame
@@ -271,36 +323,14 @@ function phaseLabel(phase: SessionProgress['phase']) {
   return labels[phase]
 }
 
-type BluetoothWriteBlock = { address: number; payload: Uint8Array }
-
-function groupBluetoothWritePairs(blocks: BluetoothWriteBlock[]): Array<[BluetoothWriteBlock, BluetoothWriteBlock]> {
-  const byAddress = new Map(blocks.map((block) => [block.address, block]))
-  const used = new Set<number>()
-  const pairs: Array<[BluetoothWriteBlock, BluetoothWriteBlock]> = []
-
-  for (const first of blocks) {
-    if (used.has(first.address)) continue
-
-    const streamSecond = byAddress.get(first.address + SHX8800PRO.framePayloadBytes)
-    if (streamSecond && !used.has(streamSecond.address)) {
-      used.add(first.address)
-      used.add(streamSecond.address)
-      pairs.push([first, streamSecond])
-      continue
-    }
-
-    const fallback =
-      blocks.find((candidate) => {
-        if (candidate.address === first.address || used.has(candidate.address)) return false
-        return !byAddress.has(candidate.address - SHX8800PRO.framePayloadBytes) && !byAddress.has(candidate.address + SHX8800PRO.framePayloadBytes)
-      }) ?? blocks.find((candidate) => candidate.address !== first.address && !used.has(candidate.address))
-
-    if (!fallback) throw new Error(`蓝牙写入失败：${addressLabel(first.address)} 缺少配对块`)
-    used.add(first.address)
-    used.add(fallback.address)
-    pairs.push([first, fallback])
+function groupBluetoothWritePairs(blocks: Array<{ address: number; payload: Uint8Array }>) {
+  const pairs: Array<[{ address: number; payload: Uint8Array }, { address: number; payload: Uint8Array }]> = []
+  for (let index = 0; index < blocks.length; index += 2) {
+    const first = blocks[index]
+    const second = blocks[index + 1]
+    if (!first || !second) throw new Error('蓝牙写入块数量异常，无法按双块写入')
+    pairs.push([first, second])
   }
-
   return pairs
 }
 

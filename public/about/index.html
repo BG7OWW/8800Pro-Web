@@ -1,0 +1,572 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>关于 8800Pro - 网页与移动端读写频工具</title>
+    <meta
+      name="description"
+      content="8800Pro 是面向森海克斯 8800Pro 对讲机的网页端与移动端读写频工具，支持蓝牙、USB、频率快照、中继台库和多平台使用。"
+    />
+    <link rel="icon" href="/favicon.png" />
+    <link rel="apple-touch-icon" href="/apple-touch-icon.png" />
+    <style>
+      :root {
+        color-scheme: light;
+        --bg: #f5f7f8;
+        --ink: #172129;
+        --muted: #687582;
+        --subtle: #8d99a4;
+        --line: #dde6e9;
+        --panel: #ffffff;
+        --panel-2: #f8fbfb;
+        --primary: #0d6f78;
+        --green: #20825d;
+        --warn: #b5771d;
+        --shadow: 0 24px 70px rgba(30, 42, 52, 0.1);
+      }
+
+      @media (prefers-color-scheme: dark) {
+        :root {
+          color-scheme: dark;
+          --bg: #10171b;
+          --ink: #edf5f5;
+          --muted: #a7b5bb;
+          --subtle: #7f8d93;
+          --line: #26343a;
+          --panel: #151f24;
+          --panel-2: #111a1e;
+          --primary: #5fc3c9;
+          --green: #73d0a7;
+          --warn: #e7b15c;
+          --shadow: 0 24px 70px rgba(0, 0, 0, 0.32);
+        }
+      }
+
+      * {
+        box-sizing: border-box;
+      }
+
+      body {
+        margin: 0;
+        min-width: 320px;
+        min-height: 100vh;
+        color: var(--ink);
+        background:
+          radial-gradient(circle at 12% 0%, rgba(13, 111, 120, 0.16), transparent 32%),
+          linear-gradient(180deg, rgba(255, 255, 255, 0.78), rgba(245, 247, 248, 0.96)),
+          var(--bg);
+        font-family:
+          Inter, -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC",
+          "Hiragino Sans GB", "Microsoft YaHei", sans-serif;
+        line-height: 1.65;
+      }
+
+      a {
+        color: inherit;
+      }
+
+      .page {
+        width: min(1120px, calc(100% - 32px));
+        margin: 0 auto;
+        padding: 28px 0 34px;
+      }
+
+      .nav {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 16px;
+        margin-bottom: 34px;
+      }
+
+      .brand {
+        display: inline-flex;
+        align-items: center;
+        gap: 12px;
+        text-decoration: none;
+        font-weight: 800;
+      }
+
+      .brand img {
+        width: 42px;
+        height: 42px;
+      }
+
+      .nav-links {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 10px;
+      }
+
+      .nav-links a,
+      .button {
+        min-height: 40px;
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        gap: 8px;
+        padding: 9px 14px;
+        border: 1px solid var(--line);
+        border-radius: 8px;
+        background: rgba(255, 255, 255, 0.72);
+        color: var(--ink);
+        text-decoration: none;
+        font-weight: 700;
+        transition:
+          transform 0.16s ease,
+          border-color 0.16s ease,
+          box-shadow 0.16s ease,
+          background 0.16s ease;
+      }
+
+      .nav-links a:hover,
+      .button:hover {
+        transform: translateY(-1px);
+        border-color: rgba(13, 111, 120, 0.35);
+        box-shadow: 0 14px 32px rgba(24, 40, 48, 0.1);
+      }
+
+      .button.primary {
+        color: #fff;
+        border-color: var(--primary);
+        background: linear-gradient(135deg, #0d6f78, #16868f);
+      }
+
+      .button.green {
+        color: #fff;
+        border-color: var(--green);
+        background: linear-gradient(135deg, #20825d, #0d7f8d);
+      }
+
+      .hero {
+        min-height: 440px;
+        display: grid;
+        grid-template-columns: minmax(0, 1.1fr) minmax(300px, 0.9fr);
+        align-items: center;
+        gap: 28px;
+        padding: clamp(26px, 5vw, 56px);
+        border: 1px solid var(--line);
+        border-radius: 12px;
+        background: rgba(255, 255, 255, 0.82);
+        box-shadow: var(--shadow);
+      }
+
+      .eyebrow {
+        display: inline-flex;
+        align-items: center;
+        min-height: 30px;
+        padding: 0 10px;
+        border: 1px solid rgba(13, 111, 120, 0.22);
+        border-radius: 999px;
+        color: var(--primary);
+        background: rgba(13, 111, 120, 0.08);
+        font-size: 13px;
+        font-weight: 800;
+      }
+
+      h1,
+      h2,
+      h3,
+      p {
+        margin-top: 0;
+      }
+
+      h1 {
+        max-width: 720px;
+        margin: 18px 0 18px;
+        font-size: clamp(38px, 7vw, 74px);
+        line-height: 0.98;
+        letter-spacing: 0;
+      }
+
+      .hero p {
+        max-width: 650px;
+        color: var(--muted);
+        font-size: 17px;
+      }
+
+      .hero-actions {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 10px;
+        margin-top: 24px;
+      }
+
+      .device-panel {
+        min-height: 320px;
+        display: grid;
+        align-content: center;
+        gap: 16px;
+        padding: 24px;
+        border: 1px solid var(--line);
+        border-radius: 10px;
+        background:
+          linear-gradient(135deg, rgba(13, 111, 120, 0.1), rgba(32, 130, 93, 0.08)),
+          var(--panel-2);
+      }
+
+      .device-card {
+        display: grid;
+        gap: 10px;
+        padding: 16px;
+        border: 1px solid var(--line);
+        border-radius: 8px;
+        background: var(--panel);
+      }
+
+      .device-card strong {
+        font-size: 18px;
+      }
+
+      .device-card span {
+        color: var(--muted);
+        font-size: 14px;
+      }
+
+      .metrics {
+        display: grid;
+        grid-template-columns: repeat(3, minmax(0, 1fr));
+        gap: 12px;
+        margin: 18px 0 0;
+      }
+
+      .metric {
+        min-height: 88px;
+        display: grid;
+        align-content: center;
+        gap: 5px;
+        padding: 14px;
+        border: 1px solid var(--line);
+        border-radius: 8px;
+        background: var(--panel);
+      }
+
+      .metric strong {
+        font-size: 22px;
+      }
+
+      .metric span {
+        color: var(--muted);
+        font-size: 13px;
+      }
+
+      .section {
+        margin-top: 18px;
+        padding: clamp(22px, 4vw, 34px);
+        border: 1px solid var(--line);
+        border-radius: 12px;
+        background: var(--panel);
+        box-shadow: 0 14px 42px rgba(30, 42, 52, 0.06);
+      }
+
+      .section-head {
+        display: flex;
+        align-items: end;
+        justify-content: space-between;
+        gap: 18px;
+        margin-bottom: 20px;
+      }
+
+      .section h2 {
+        margin-bottom: 6px;
+        font-size: clamp(26px, 4vw, 38px);
+        line-height: 1.08;
+      }
+
+      .section-head p,
+      .section > p {
+        max-width: 780px;
+        color: var(--muted);
+      }
+
+      .feature-grid,
+      .platform-grid,
+      .story-grid {
+        display: grid;
+        gap: 12px;
+      }
+
+      .feature-grid {
+        grid-template-columns: repeat(3, minmax(0, 1fr));
+      }
+
+      .platform-grid {
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+      }
+
+      .story-grid {
+        grid-template-columns: minmax(0, 0.92fr) minmax(0, 1.08fr);
+      }
+
+      .feature,
+      .platform,
+      .story {
+        padding: 18px;
+        border: 1px solid var(--line);
+        border-radius: 8px;
+        background: var(--panel-2);
+      }
+
+      .feature h3,
+      .platform h3,
+      .story h3 {
+        margin-bottom: 8px;
+        font-size: 18px;
+      }
+
+      .feature p,
+      .platform p,
+      .story p,
+      li {
+        color: var(--muted);
+      }
+
+      .platform-actions {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 10px;
+        margin-top: 18px;
+      }
+
+      .download-note {
+        margin-top: 10px;
+        color: var(--subtle);
+        font-size: 13px;
+      }
+
+      .password {
+        display: inline-flex;
+        min-height: 30px;
+        align-items: center;
+        padding: 0 9px;
+        border: 1px solid var(--line);
+        border-radius: 7px;
+        color: var(--ink);
+        background: var(--panel);
+        font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+        font-weight: 800;
+      }
+
+      ul {
+        margin: 0;
+        padding-left: 20px;
+      }
+
+      footer {
+        display: grid;
+        justify-items: center;
+        gap: 8px;
+        margin-top: 26px;
+        color: var(--subtle);
+        font-size: 13px;
+      }
+
+      .beian {
+        display: flex;
+        flex-wrap: wrap;
+        justify-content: center;
+        gap: 10px 14px;
+      }
+
+      .beian a {
+        color: var(--subtle);
+        text-decoration: none;
+      }
+
+      @media (max-width: 860px) {
+        .nav {
+          align-items: flex-start;
+          flex-direction: column;
+        }
+
+        .hero,
+        .story-grid,
+        .platform-grid {
+          grid-template-columns: 1fr;
+        }
+
+        .feature-grid,
+        .metrics {
+          grid-template-columns: 1fr;
+        }
+
+        .section-head {
+          display: grid;
+        }
+      }
+
+      @media (max-width: 560px) {
+        .page {
+          width: min(100% - 20px, 1120px);
+          padding-top: 18px;
+        }
+
+        .nav-links,
+        .hero-actions,
+        .platform-actions {
+          width: 100%;
+        }
+
+        .nav-links a,
+        .button {
+          flex: 1 1 100%;
+        }
+
+        .hero {
+          min-height: 0;
+          padding: 22px;
+        }
+
+        .device-panel {
+          min-height: 0;
+          padding: 16px;
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <div class="page">
+      <nav class="nav" aria-label="页面导航">
+        <a class="brand" href="/">
+          <img src="/apple-touch-icon.png" alt="8800Pro 图标" />
+          <span>8800Pro</span>
+        </a>
+        <div class="nav-links">
+          <a href="/">打开网页版</a>
+          <a href="/support.html">技术支持</a>
+          <a href="/privacy.html">隐私政策</a>
+        </div>
+      </nav>
+
+      <header class="hero">
+        <div>
+          <span class="eyebrow">网页端 / iOS / Android</span>
+          <h1>森海克斯 8800Pro 的现代读写频工具</h1>
+          <p>
+            8800Pro 是为森海克斯 8800Pro 对讲机制作的多平台读写频工具。它把蓝牙、USB 写频线、信道编辑、频率快照、中继台库、FM 收音机、DTMF、VFO 和开机图等能力整理成一套更容易使用的控制台。
+          </p>
+          <div class="hero-actions">
+            <a class="button primary" href="/">立即使用网页版</a>
+            <a class="button green" href="#mobile">下载手机版</a>
+          </div>
+        </div>
+        <aside class="device-panel" aria-label="版本概览">
+          <article class="device-card">
+            <strong>网页版</strong>
+            <span>桌面 Chrome / Edge 可直接使用 Web Bluetooth 或 Web Serial，不安装也能读写频。</span>
+          </article>
+          <article class="device-card">
+            <strong>手机版</strong>
+            <span>iOS 与 Android 提供原生应用入口，适合移动设备上管理频率与备份。</span>
+          </article>
+          <div class="metrics">
+            <div class="metric">
+              <strong>512</strong>
+              <span>信道容量</span>
+            </div>
+            <div class="metric">
+              <strong>8</strong>
+              <span>信道区域</span>
+            </div>
+            <div class="metric">
+              <strong>BLE</strong>
+              <span>蓝牙读写频</span>
+            </div>
+          </div>
+        </aside>
+      </header>
+
+      <section class="section">
+        <div class="section-head">
+          <div>
+            <h2>核心特性</h2>
+            <p>围绕真实 8800Pro 手台的读写频流程设计，尽量把危险操作变得可见、可回退、可验证。</p>
+          </div>
+        </div>
+        <div class="feature-grid">
+          <article class="feature">
+            <h3>蓝牙与 USB 双链路</h3>
+            <p>网页版支持蓝牙读写频和 USB 写频线。蓝牙连接时提供常规写频与快速写频两个入口，USB 写频线适合首次备份和稳定写入。</p>
+          </article>
+          <article class="feature">
+            <h3>频率快照与备份</h3>
+            <p>读频、写频和批量导入前都可以保存快照。配置出错时可恢复到之前状态，再重新写回设备。</p>
+          </article>
+          <article class="feature">
+            <h3>全国中继台库</h3>
+            <p>内置 HamCQ 中继台数据，按大区、省份和城市筛选，可把中继台参数快速写入当前信道。</p>
+          </article>
+          <article class="feature">
+            <h3>完整信道管理</h3>
+            <p>编辑接收/发射频率、亚音、名称、功率、带宽、扫描、繁忙锁、信令组等常用参数。</p>
+          </article>
+          <article class="feature">
+            <h3>高级功能面板</h3>
+            <p>提供 VFO、DTMF、FM 收音机、整机功能设置、卫星信道生成和开机图写入等页面。</p>
+          </article>
+          <article class="feature">
+            <h3>读回校验思路</h3>
+            <p>写频前自动备份，写频后建议再次读频确认，让浏览器操作尽量接近实体写频软件的可控性。</p>
+          </article>
+        </div>
+      </section>
+
+      <section class="section">
+        <div class="story-grid">
+          <article class="story">
+            <h2>网页版</h2>
+            <p>
+              网页版运行在浏览器中，适合桌面端使用。Chrome / Edge 可以通过 Web Bluetooth 连接手台，也可以通过 Web Serial 连接 USB 写频线。未连接时页面只显示连接入口，连接成功后再进入控制台，避免新用户不知道从哪里开始。
+            </p>
+            <ul>
+              <li>适合桌面端快速编辑、导入导出和批量整理信道。</li>
+              <li>支持 JSON、Excel、CSV 等配置文件流转。</li>
+              <li>服务器版本部署在 8800.743.world，GitHub Pages 版本也可作为备用访问入口。</li>
+            </ul>
+          </article>
+          <article class="story" id="mobile">
+            <h2>手机版</h2>
+            <p>
+              手机版面向随身使用场景，适合在移动设备上查看配置、管理备份和执行读写频相关操作。由于 iOS 普通浏览器不开放本项目需要的 Web Bluetooth / Web Serial 能力，移动端建议使用原生 App。
+            </p>
+            <div class="platform-actions">
+              <a class="button primary" href="https://www.apple.com/app-store/">iOS：在 App Store 下载</a>
+              <a class="button green" href="https://ac0.lanzouv.com/iIUOi3sby7va">Android：蓝奏云下载</a>
+            </div>
+            <p class="download-note">Android 下载密码：<span class="password">gmgi</span></p>
+          </article>
+        </div>
+      </section>
+
+      <section class="section">
+        <div class="section-head">
+          <div>
+            <h2>为什么做这个项目</h2>
+            <p>
+              8800Pro 的读写频链路并没有完整公开文档。项目从社区开源实现、官方软件、Android APK、iOS 应用行为和真实手台回读中一点点对照协议，把信道、区域、VFO、DTMF、FM 和功能设置整理成可视化界面。
+            </p>
+          </div>
+        </div>
+        <div class="platform-grid">
+          <article class="platform">
+            <h3>更低的使用门槛</h3>
+            <p>把“先连接、先读频、再编辑、最后写回”的流程做成清晰路径，让第一次接触写频的用户也能理解每一步。</p>
+          </article>
+          <article class="platform">
+            <h3>更强的可恢复性</h3>
+            <p>频率快照、写前备份、导入导出和读回确认，都是为了减少配置丢失、误写和反复试错的成本。</p>
+          </article>
+        </div>
+      </section>
+
+      <footer>
+        <strong>Made by BG7OWW</strong>
+        <div class="beian">
+          <a href="https://beian.miit.gov.cn/" rel="noreferrer" target="_blank">粤ICP备2023143201号</a>
+          <a href="https://beian.mps.gov.cn/#/query/webSearch?code=44011302005027" rel="noreferrer" target="_blank">粤公网安备44011302005027号</a>
+        </div>
+      </footer>
+    </div>
+  </body>
+</html>

@@ -652,6 +652,12 @@
   box-shadow: 0 10px 24px rgba(169, 102, 18, 0.2);
 }
 
+.primary-button.fast {
+  background: linear-gradient(135deg, #20825d, #0d7f8d);
+  border-color: #20825d;
+  box-shadow: 0 10px 24px rgba(32, 130, 93, 0.2);
+}
+
 .ghost-button,
 .icon-button,
 .file-button,
@@ -1134,6 +1140,12 @@
   grid-template-columns: minmax(0, 1fr) 390px;
 }
 
+.channel-page {
+  display: grid;
+  gap: 14px;
+  align-items: start;
+}
+
 .beginner-banner {
   display: grid;
   gap: 4px;
@@ -1317,7 +1329,6 @@
 }
 
 .repeater-panel.wide {
-  grid-column: 1 / -1;
   display: grid;
   gap: 14px;
 }
