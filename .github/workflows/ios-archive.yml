@@ -102,11 +102,16 @@ jobs:
             PP_PATH="${RUNNER_TEMP}/profile.mobileprovision"
             echo "$BUILD_PROVISION_PROFILE_BASE64" | base64 --decode > "$PP_PATH"
             mkdir -p "$HOME/Library/MobileDevice/Provisioning Profiles"
-            PROFILE_UUID=$(/usr/libexec/PlistBuddy -c 'Print :UUID' /dev/stdin <<< "$(security cms -D -i "$PP_PATH")")
+            PROFILE_PLIST="$(security cms -D -i "$PP_PATH")"
+            PROFILE_UUID=$(/usr/libexec/PlistBuddy -c 'Print :UUID' /dev/stdin <<< "$PROFILE_PLIST")
             cp "$PP_PATH" "$HOME/Library/MobileDevice/Provisioning Profiles/${PROFILE_UUID}.mobileprovision"
-            PROFILE_NAME=$(/usr/libexec/PlistBuddy -c 'Print :Name' /dev/stdin <<< "$(security cms -D -i "$PP_PATH")")
+            PROFILE_NAME=$(/usr/libexec/PlistBuddy -c 'Print :Name' /dev/stdin <<< "$PROFILE_PLIST")
             echo "PROFILE_NAME=$PROFILE_NAME" >> "$GITHUB_ENV"
-            echo "SIGNING_MODE=manual" >> "$GITHUB_ENV"
+            if /usr/libexec/PlistBuddy -c 'Print :IsXcodeManaged' /dev/stdin <<< "$PROFILE_PLIST" 2>/dev/null | grep -qi '^true$'; then
+              echo "SIGNING_MODE=automatic" >> "$GITHUB_ENV"
+            else
+              echo "SIGNING_MODE=manual" >> "$GITHUB_ENV"
+            fi
           else
             echo "::warning::IOS_PROVISION_PROFILE_BASE64 is missing. Building unsigned xcarchive."
             echo "SIGNING_MODE=unsigned" >> "$GITHUB_ENV"
@@ -126,6 +131,16 @@ jobs:
               DEVELOPMENT_TEAM=U464K5924C \
               CODE_SIGN_STYLE=Manual \
               PROVISIONING_PROFILE_SPECIFIER="$PROFILE_NAME" \
+              clean archive
+          elif [ "$SIGNING_MODE" = "automatic" ]; then
+            xcodebuild archive \
+              -project "$PROJECT_PATH" \
+              -scheme "$SCHEME" \
+              -configuration Release \
+              -destination 'generic/platform=iOS' \
+              -archivePath "$ARCHIVE_PATH" \
+              DEVELOPMENT_TEAM=U464K5924C \
+              CODE_SIGN_STYLE=Automatic \
               clean archive
           else
             xcodebuild archive \
