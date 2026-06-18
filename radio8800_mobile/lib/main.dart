@@ -455,6 +455,18 @@ class ChannelsPage extends StatelessWidget {
                       ),
                     ),
                     const SizedBox(height: 12),
+                    ActionButton(
+                      label: '编辑区域名',
+                      icon: Icons.edit_rounded,
+                      onPressed: () => showDialog<void>(
+                        context: context,
+                        builder: (_) => BankNameEditorDialog(
+                          store: store,
+                          bankIndex: store.selectedBankIndex,
+                        ),
+                      ),
+                    ),
+                    const SizedBox(height: 12),
                     TextField(
                       decoration: const InputDecoration(
                         prefixIcon: Icon(Icons.search_rounded),
@@ -789,6 +801,75 @@ class ChannelsPage extends StatelessWidget {
               ),
             ],
           ),
+        ),
+      ],
+    );
+  }
+}
+
+class BankNameEditorDialog extends StatefulWidget {
+  const BankNameEditorDialog({
+    super.key,
+    required this.store,
+    required this.bankIndex,
+  });
+
+  final MobileStore store;
+  final int bankIndex;
+
+  @override
+  State<BankNameEditorDialog> createState() => _BankNameEditorDialogState();
+}
+
+class _BankNameEditorDialogState extends State<BankNameEditorDialog> {
+  late final TextEditingController controller;
+
+  @override
+  void initState() {
+    super.initState();
+    controller = TextEditingController(
+      text: widget.store.data.bankNames[widget.bankIndex],
+    );
+  }
+
+  @override
+  void dispose() {
+    controller.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return AlertDialog(
+      title: const Text('编辑区域名称'),
+      content: Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          TextField(
+            controller: controller,
+            autofocus: true,
+            maxLength: 12,
+            decoration: const InputDecoration(
+              border: OutlineInputBorder(),
+              hintText: '区域名称',
+            ),
+          ),
+          const SizedBox(height: 8),
+          const Text('区域名称会随写频写入机器。', style: TextStyle(color: Colors.black54)),
+        ],
+      ),
+      actions: [
+        TextButton(
+          onPressed: () => Navigator.of(context).pop(),
+          child: const Text('取消'),
+        ),
+        FilledButton(
+          onPressed: () {
+            widget.store.updateBankName(widget.bankIndex, controller.text);
+            Navigator.of(context).pop();
+          },
+          child: const Text('保存'),
         ),
       ],
     );
@@ -2226,6 +2307,17 @@ class MobileStore extends ChangeNotifier {
     selectedBankIndex = index.clamp(0, data.bankNames.length - 1);
     selectedChannelIndex = 0;
     notifyListeners();
+  }
+
+  void updateBankName(int index, String value) {
+    final trimmed = value.trim();
+    if (!data.bankNames.asMap().containsKey(index) || trimmed.isEmpty) {
+      _warning('区域名称不能为空');
+      return;
+    }
+    data.bankNames[index] = trimmed.characters.take(12).toString();
+    data.updatedAt = DateTime.now();
+    _success('已保存区域 ${index + 1} 名称');
   }
 
   void selectChannel(int channelId) {

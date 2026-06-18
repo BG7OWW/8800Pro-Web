@@ -173,6 +173,20 @@ void main() {
     expect(store.data.channels[0][3].visible, isFalse);
   });
 
+  test('updates bank names and rejects empty names', () {
+    final store = MobileStore();
+
+    store.updateBankName(0, ' 中继台区域123456789 ');
+
+    expect(store.data.bankNames[0], '中继台区域1234567');
+    expect(store.notice?.text, '已保存区域 1 名称');
+
+    store.updateBankName(0, '   ');
+
+    expect(store.data.bankNames[0], '中继台区域1234567');
+    expect(store.notice?.text, '区域名称不能为空');
+  });
+
   test('parses the packaged HamCQ repeater library', () {
     final raw = File('assets/data/hamcq-repeaters.json').readAsStringSync();
     final package = RepeaterLibraryPackage.fromJson(
