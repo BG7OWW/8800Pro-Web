@@ -8,7 +8,7 @@ permissions:
 
 jobs:
   archive:
-    name: Build xcarchive with Xcode 26.5
+    name: Build xcarchive with Xcode 26.x
     runs-on: macos-latest
     timeout-minutes: 45
 
@@ -21,7 +21,7 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Select Xcode 26.5
+      - name: Select Xcode 26.x
         run: |
           set -euo pipefail
           echo "Installed Xcode apps:"
@@ -31,7 +31,17 @@ jobs:
           for candidate in \
             /Applications/Xcode_26.5.app \
             /Applications/Xcode_26.5.0.app \
-            /Applications/Xcode-26.5.app
+            /Applications/Xcode-26.5.app \
+            /Applications/Xcode_26.4.app \
+            /Applications/Xcode_26.4.0.app \
+            /Applications/Xcode_26.3.app \
+            /Applications/Xcode_26.3.0.app \
+            /Applications/Xcode_26.2.app \
+            /Applications/Xcode_26.2.0.app \
+            /Applications/Xcode_26.1.app \
+            /Applications/Xcode_26.1.1.app \
+            /Applications/Xcode_26.0.app \
+            /Applications/Xcode_26.0.1.app
           do
             if [ -d "$candidate" ]; then
               XCODE_APP="$candidate"
@@ -46,7 +56,7 @@ jobs:
 
           sudo xcode-select -s "$XCODE_APP/Contents/Developer"
           xcodebuild -version
-          xcodebuild -version | grep -q '^Xcode 26\.5'
+          xcodebuild -version | grep -q '^Xcode 26\.'
 
       - name: Validate certificate secrets
         env:
