@@ -1,7 +1,9 @@
 import 'dart:async';
 import 'dart:convert';
+import 'dart:io';
 import 'dart:math';
 
+import 'package:device_info_plus/device_info_plus.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_blue_plus/flutter_blue_plus.dart';
@@ -2052,23 +2054,19 @@ class MobileStore extends ChangeNotifier {
   }
 
   Future<bool> _ensureBluetoothPermissions() async {
-    final requests = <Permission>[
-      Permission.bluetoothScan,
-      Permission.bluetoothConnect,
-      Permission.locationWhenInUse,
-    ];
+    var androidSdk = 31;
+    if (Platform.isAndroid) {
+      androidSdk = (await DeviceInfoPlugin().androidInfo).version.sdkInt;
+    }
+
+    final requests = androidSdk >= 31
+        ? <Permission>[Permission.bluetoothScan, Permission.bluetoothConnect]
+        : <Permission>[Permission.locationWhenInUse];
 
     final statuses = await requests.request();
-    final scan = statuses[Permission.bluetoothScan];
-    final connect = statuses[Permission.bluetoothConnect];
-    final location = statuses[Permission.locationWhenInUse];
-    final bluetoothGranted =
-        (scan == null || scan.isGranted || scan.isLimited) &&
-        (connect == null || connect.isGranted || connect.isLimited);
-    final legacyLocationGranted =
-        location == null || location.isGranted || location.isLimited;
+    final granted = statuses.values.every(_isPermissionGranted);
 
-    if (bluetoothGranted || legacyLocationGranted) {
+    if (granted) {
       return true;
     }
 
@@ -2076,14 +2074,25 @@ class MobileStore extends ChangeNotifier {
       (status) => status.isPermanentlyDenied,
     );
     if (permanentlyDenied) {
-      _warning('蓝牙权限被永久拒绝，请到系统设置里允许蓝牙和位置权限。');
+      _warning(
+        androidSdk >= 31
+            ? '蓝牙权限被永久拒绝，请到系统设置里允许附近设备权限。'
+            : '定位权限被永久拒绝，Android 11 及以下需要它才能扫描蓝牙设备。',
+      );
       await openAppSettings();
       return false;
     }
 
-    _warning('需要蓝牙和位置权限才能扫描对讲机。');
+    _warning(
+      androidSdk >= 31
+          ? '需要附近设备/蓝牙权限才能扫描对讲机。'
+          : 'Android 11 及以下需要定位权限才能扫描蓝牙设备。',
+    );
     return false;
   }
+
+  bool _isPermissionGranted(PermissionStatus status) =>
+      status.isGranted || status.isLimited;
 
   Future<void> _connectToDevice(BluetoothDevice device) async {
     linkState = const LinkState.connecting();
