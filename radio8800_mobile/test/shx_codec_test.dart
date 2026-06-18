@@ -243,4 +243,23 @@ void main() {
     expect(store.logs.first, contains('日志已清空'));
     expect(store.notice?.text, '日志已清空');
   });
+
+  test(
+    'save actions explain that radio transfer still needs write frequency',
+    () {
+      final store = MobileStore();
+
+      store.saveFunctionSettings();
+      expect(store.notice?.text, contains('回到总览页面点击写频'));
+
+      store.saveVfoSettings();
+      expect(store.notice?.text, contains('回到总览页面写频'));
+
+      store.saveDtmfSettings();
+      expect(store.notice?.text, contains('回到总览页面写频'));
+
+      store.saveFmSettings();
+      expect(store.notice?.text, contains('回到总览页面写频'));
+    },
+  );
 }

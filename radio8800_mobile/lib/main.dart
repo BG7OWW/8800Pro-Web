@@ -1083,6 +1083,25 @@ class _SettingsPageState extends State<SettingsPage> {
                   ],
                 ),
               ),
+              const SizedBox(height: 16),
+              PanelCard(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    const SectionHeader(
+                      title: '保存功能设置',
+                      subtitle: '这里只保存到当前配置；要传输到机器，请回到总览页面点击写频。',
+                    ),
+                    const SizedBox(height: 12),
+                    ActionButton(
+                      label: '保存',
+                      icon: Icons.check_circle_rounded,
+                      primary: true,
+                      onPressed: store.saveFunctionSettings,
+                    ),
+                  ],
+                ),
+              ),
             ],
           ),
         ),
@@ -1237,6 +1256,13 @@ class _ToolsPageState extends State<ToolsPage> {
                       onTxToneChanged: (value) =>
                           store.updateVfo((data) => data.vfoBTxTone = value),
                     ),
+                    const SizedBox(height: 12),
+                    ActionButton(
+                      label: '保存',
+                      icon: Icons.check_circle_rounded,
+                      primary: true,
+                      onPressed: store.saveVfoSettings,
+                    ),
                   ],
                 ),
               ),
@@ -1353,6 +1379,13 @@ class _ToolsPageState extends State<ToolsPage> {
                         );
                       },
                     ),
+                    const SizedBox(height: 12),
+                    ActionButton(
+                      label: '保存',
+                      icon: Icons.check_circle_rounded,
+                      primary: true,
+                      onPressed: store.saveDtmfSettings,
+                    ),
                   ],
                 ),
               ),
@@ -1428,6 +1461,13 @@ class _ToolsPageState extends State<ToolsPage> {
                           ),
                         );
                       },
+                    ),
+                    const SizedBox(height: 12),
+                    ActionButton(
+                      label: '保存',
+                      icon: Icons.check_circle_rounded,
+                      primary: true,
+                      onPressed: store.saveFmSettings,
                     ),
                   ],
                 ),
@@ -2337,6 +2377,22 @@ class MobileStore extends ChangeNotifier {
     data.functions.callSign = value.characters.take(12).toString();
     data.updatedAt = DateTime.now();
     notifyListeners();
+  }
+
+  void saveFunctionSettings() {
+    _success('功能设置已保存到本地配置。要传输到机器，请回到总览页面点击写频。');
+  }
+
+  void saveVfoSettings() {
+    _success('VFO 设置已保存到本地配置。要传输到机器，请回到总览页面写频。');
+  }
+
+  void saveDtmfSettings() {
+    _success('DTMF 设置已保存到本地配置。要传输到机器，请回到总览页面写频。');
+  }
+
+  void saveFmSettings() {
+    _success('FM 收音设置已保存到本地配置。要传输到机器，请回到总览页面写频。');
   }
 
   Future<void> connectBluetooth() async {
