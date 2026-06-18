@@ -1819,6 +1819,7 @@ class MobileStore extends ChangeNotifier {
   static const String bleCharacteristic =
       '0000FFE1-0000-1000-8000-00805F9B34FB';
   static const String backupKey = 'radio8800_mobile.backups';
+  static const int maxBackupCount = 20;
 
   RadioAppData data = RadioAppData.defaults();
   final List<RadioSnapshot> backups = [];
@@ -2202,7 +2203,24 @@ class MobileStore extends ChangeNotifier {
     _log('手动发送结束字节 45');
   }
 
-  void createBackup(String title) {
+  bool createBackup(String title, {bool automatic = false}) {
+    if (!data.hasBackupContent) {
+      if (!automatic) {
+        _warning('当前没有有效信道或设备原始数据，已跳过备份。');
+      } else {
+        _log('跳过自动备份：当前没有有效内容');
+      }
+      return false;
+    }
+    if (backups.isNotEmpty &&
+        backups.first.data.backupSignature == data.backupSignature) {
+      if (!automatic) {
+        _warning('当前内容与最近备份一致，已跳过重复备份。');
+      } else {
+        _log('跳过自动备份：内容与最近备份一致');
+      }
+      return false;
+    }
     backups.insert(
       0,
       RadioSnapshot(
@@ -2212,8 +2230,16 @@ class MobileStore extends ChangeNotifier {
         data: data.copy(),
       ),
     );
+    if (backups.length > maxBackupCount) {
+      backups.removeRange(maxBackupCount, backups.length);
+    }
     _persistBackups();
+    if (!automatic) {
+      notice = NoticeMessage.success('已创建备份：$title');
+      _log('已创建备份：$title');
+    }
     notifyListeners();
+    return true;
   }
 
   void restoreBackup(String id) {
@@ -2312,7 +2338,7 @@ class MobileStore extends ChangeNotifier {
     if (_isTransferActive()) {
       return;
     }
-    createBackup('读频前自动备份');
+    createBackup('读频前自动备份', automatic: true);
     lastOperation = '读频';
     progressNote = '正在握手';
     _setTransferProgress('读频：正在握手', 0);
@@ -2361,7 +2387,7 @@ class MobileStore extends ChangeNotifier {
       _warning('当前没有有效信道，已取消写频。');
       return;
     }
-    createBackup('写频前自动备份');
+    createBackup('写频前自动备份', automatic: true);
     lastOperation = '写频';
     progressNote = '正在握手';
     _setTransferProgress('写频：正在握手', 0);
@@ -2619,6 +2645,10 @@ class MobileStore extends ChangeNotifier {
           (item) => RadioSnapshot.fromJson(item as Map<String, dynamic>),
         ),
       );
+    if (backups.length > maxBackupCount) {
+      backups.removeRange(maxBackupCount, backups.length);
+      await _persistBackups();
+    }
   }
 
   Future<void> _persistBackups() async {
@@ -2982,6 +3012,13 @@ class RadioAppData {
       .expand((item) => item)
       .where((channel) => channel.visible && channel.rxFreq.isNotEmpty)
       .length;
+
+  bool get hasBackupContent => visibleChannelCount > 0 || rawBlocks.isNotEmpty;
+
+  String get backupSignature {
+    final payload = Map<String, dynamic>.from(toJson())..remove('updatedAt');
+    return jsonEncode(payload);
+  }
 
   RadioAppData copy() => RadioAppData.fromJson(toJson());
 

@@ -63,4 +63,21 @@ void main() {
     expect(decoded.channels[0][0].rxTone, 'D023N');
     expect(decoded.channels[0][0].txTone, 'D754I');
   });
+
+  test('backup signatures ignore timestamp changes', () {
+    final data = RadioAppData.defaults();
+    expect(data.hasBackupContent, isFalse);
+
+    data.channels[0][0] = Channel(
+      id: 1,
+      rxFreq: '439.46250',
+      txFreq: '434.46250',
+      visible: true,
+    );
+    final before = data.backupSignature;
+    data.updatedAt = data.updatedAt.add(const Duration(minutes: 5));
+
+    expect(data.hasBackupContent, isTrue);
+    expect(data.backupSignature, before);
+  });
 }
