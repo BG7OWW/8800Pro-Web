@@ -93,7 +93,20 @@ class _HomeShellState extends State<HomeShell> {
     ];
 
     return Scaffold(
-      body: SafeArea(child: pages[currentTab.index]),
+      body: Stack(
+        children: [
+          SafeArea(child: pages[currentTab.index]),
+          if (widget.store.transferProgressValue != null)
+            Positioned(
+              top: 12,
+              left: 16,
+              right: 16,
+              child: SafeArea(
+                child: TransferProgressBanner(store: widget.store),
+              ),
+            ),
+        ],
+      ),
       bottomNavigationBar: NavigationBar(
         selectedIndex: currentTab.index,
         onDestinationSelected: (index) =>
@@ -1823,6 +1836,8 @@ class MobileStore extends ChangeNotifier {
   bool showFieldHints = true;
   String progressNote = '准备就绪';
   String lastOperation = '尚未开始读写';
+  double? transferProgressValue;
+  String transferProgressTitle = '';
 
   BluetoothDevice? _device;
   BluetoothCharacteristic? _characteristic;
@@ -2294,10 +2309,13 @@ class MobileStore extends ChangeNotifier {
     if (!_ensureBleReady()) {
       return;
     }
+    if (_isTransferActive()) {
+      return;
+    }
     createBackup('读频前自动备份');
     lastOperation = '读频';
     progressNote = '正在握手';
-    notifyListeners();
+    _setTransferProgress('读频：正在握手', 0);
 
     try {
       await _performHandshake();
@@ -2307,9 +2325,10 @@ class MobileStore extends ChangeNotifier {
         final address = addresses[index];
         progressNote =
             '读取 ${ShxCodec.addressLabel(address)} ${index + 1}/${addresses.length}';
-        notifyListeners();
+        _setTransferProgress(progressNote, index / addresses.length);
         final frame = await _readBlock(address);
         ShxCodec.applyBlock(next, address, frame);
+        _setTransferProgress(progressNote, (index + 1) / addresses.length);
         await Future<void>.delayed(const Duration(milliseconds: 45));
       }
       await _writePacket(Uint8List.fromList(const [0x45]));
@@ -2323,14 +2342,19 @@ class MobileStore extends ChangeNotifier {
       progressNote = '读频完成';
       lastOperation = '读频完成';
       _success('读频完成，已读取 ${data.visibleChannelCount} 个有效信道');
+      await _completeTransferProgress('读频完成');
     } catch (error) {
       progressNote = '读频失败';
+      _clearTransferProgress();
       _warning('读频失败：$error');
     }
   }
 
   Future<void> _writeRadio() async {
     if (!_ensureBleReady()) {
+      return;
+    }
+    if (_isTransferActive()) {
       return;
     }
     if (data.visibleChannelCount == 0) {
@@ -2340,7 +2364,7 @@ class MobileStore extends ChangeNotifier {
     createBackup('写频前自动备份');
     lastOperation = '写频';
     progressNote = '正在握手';
-    notifyListeners();
+    _setTransferProgress('写频：正在握手', 0);
 
     try {
       await _performHandshake();
@@ -2352,12 +2376,13 @@ class MobileStore extends ChangeNotifier {
         final second = pairs[index].$2;
         progressNote =
             '写入 ${ShxCodec.addressLabel(first.address)} ${index * 2 + 1}/$total';
-        notifyListeners();
+        _setTransferProgress(progressNote, index / pairs.length);
         await _writeBluetoothPair(first, second);
         await _readAck(
           '蓝牙写入失败：${ShxCodec.addressLabel(first.address)} / ${ShxCodec.addressLabel(second.address)}',
           const Duration(seconds: 6),
         );
+        _setTransferProgress(progressNote, (index + 1) / pairs.length);
         await Future<void>.delayed(const Duration(milliseconds: 80));
       }
       await _writePacket(Uint8List.fromList(const [0x45]));
@@ -2365,10 +2390,38 @@ class MobileStore extends ChangeNotifier {
       progressNote = '写频完成';
       lastOperation = '写频完成';
       _success('写频完成，共写入 $total 个数据块');
+      await _completeTransferProgress('写频完成');
     } catch (error) {
       progressNote = '写频失败';
+      _clearTransferProgress();
       _warning('写频失败：$error');
     }
+  }
+
+  bool _isTransferActive() {
+    if (transferProgressValue == null) {
+      return false;
+    }
+    _warning('当前正在传输，请等待本次读写完成。');
+    return true;
+  }
+
+  void _setTransferProgress(String title, double value) {
+    transferProgressTitle = title;
+    transferProgressValue = value.clamp(0, 1).toDouble();
+    notifyListeners();
+  }
+
+  Future<void> _completeTransferProgress(String title) async {
+    _setTransferProgress(title, 1);
+    await Future<void>.delayed(const Duration(milliseconds: 700));
+    _clearTransferProgress();
+  }
+
+  void _clearTransferProgress() {
+    transferProgressValue = null;
+    transferProgressTitle = '';
+    notifyListeners();
   }
 
   bool _ensureBleReady() {
@@ -3938,6 +3991,76 @@ class NoticeBanner extends StatelessWidget {
           const SizedBox(width: 10),
           Expanded(child: Text(message.text)),
         ],
+      ),
+    );
+  }
+}
+
+class TransferProgressBanner extends StatelessWidget {
+  const TransferProgressBanner({super.key, required this.store});
+
+  final MobileStore store;
+
+  @override
+  Widget build(BuildContext context) {
+    final value = store.transferProgressValue ?? 0;
+    final percent = (value * 100).clamp(0, 100).round();
+
+    return Material(
+      elevation: 12,
+      shadowColor: Colors.black.withValues(alpha: 0.16),
+      borderRadius: BorderRadius.circular(18),
+      color: Colors.white,
+      child: Container(
+        padding: const EdgeInsets.fromLTRB(14, 12, 14, 12),
+        decoration: BoxDecoration(
+          borderRadius: BorderRadius.circular(18),
+          border: Border.all(color: const Color(0x1F0F9D8A)),
+        ),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                const Icon(
+                  Icons.sync_rounded,
+                  size: 18,
+                  color: Color(0xFF0F9D8A),
+                ),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: Text(
+                    store.transferProgressTitle.isEmpty
+                        ? store.progressNote
+                        : store.transferProgressTitle,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: const TextStyle(fontWeight: FontWeight.w800),
+                  ),
+                ),
+                const SizedBox(width: 8),
+                Text(
+                  '$percent%',
+                  style: const TextStyle(
+                    color: Color(0xFF0F9D8A),
+                    fontWeight: FontWeight.w800,
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 10),
+            ClipRRect(
+              borderRadius: BorderRadius.circular(999),
+              child: LinearProgressIndicator(
+                value: value,
+                minHeight: 7,
+                backgroundColor: const Color(0x140F9D8A),
+                color: const Color(0xFF0F9D8A),
+              ),
+            ),
+          ],
+        ),
       ),
     );
   }
