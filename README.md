@@ -1,13 +1,15 @@
 # 8800Pro Web 写频工具
 
+# 除官方外目前全网唯一支持正常蓝牙写频的程序（2026.6.18）
+
 8800Pro Web 是一款面向森海克斯 8800Pro 的浏览器写频工具，使用 React、Vite 和 TypeScript 构建。它把常用信道、区域、VFO、功能菜单、DTMF、FM 收音机、卫星预设、备份导入导出等操作放到一个网页里，尽量减少传统写频软件的安装和平台限制。
 
 ## 在线使用
 
 - GitHub Pages：适合公开访问和日常快速使用。
-- 自建服务器：适合国内访问场景，服务器版本会显示 ICP 与公安备案号。
+- 自建服务器：适合国内访问场景，服务器版本会显示自己服务器的 ICP 与公安备案，如需部署到自己的服务器请自行删改
 
-浏览器建议使用 Chrome、Edge、Arc 等 Chromium 系浏览器。Web Bluetooth 和 Web Serial 都要求安全上下文：线上站点需要 HTTPS，本地调试可以使用 `http://localhost`。
+浏览器需使用Chromium内核浏览器。Web Bluetooth 和 Web Serial 都要求安全上下文：线上站点需要 HTTPS，本地调试可以使用 `http://localhost`。
 
 ## 主要功能
 
