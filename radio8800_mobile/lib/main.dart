@@ -572,7 +572,7 @@ class ChannelsPage extends StatelessWidget {
                         decoration: const InputDecoration(
                           border: OutlineInputBorder(),
                         ),
-                        items: ToneLibrary.ctcss
+                        items: ToneLibrary.choices
                             .map(
                               (tone) => DropdownMenuItem(
                                 value: tone,
@@ -593,7 +593,7 @@ class ChannelsPage extends StatelessWidget {
                         decoration: const InputDecoration(
                           border: OutlineInputBorder(),
                         ),
-                        items: ToneLibrary.ctcss
+                        items: ToneLibrary.choices
                             .map(
                               (tone) => DropdownMenuItem(
                                 value: tone,
@@ -3284,6 +3284,30 @@ class ToneLibrary {
     '250.3',
     '254.1',
   ];
+
+  static final dcs = _dcsCodesText.trim().split(RegExp(r'\s+'));
+  static final choices = [...ctcss, ...dcs];
+
+  static const _dcsCodesText = '''
+D023N D025N D026N D031N D032N D036N D043N D047N D051N D053N D054N D065N
+D071N D072N D073N D074N D114N D115N D116N D122N D125N D131N D132N D134N
+D143N D145N D152N D155N D156N D162N D165N D172N D174N D205N D212N D223N
+D225N D226N D243N D244N D245N D246N D251N D252N D255N D261N D263N D265N
+D266N D271N D274N D306N D311N D315N D325N D331N D332N D343N D346N D351N
+D356N D364N D365N D371N D411N D412N D413N D423N D431N D432N D445N D446N
+D452N D454N D455N D462N D464N D465N D466N D503N D506N D516N D523N D526N
+D532N D546N D565N D606N D612N D624N D627N D631N D632N D645N D654N D662N
+D664N D703N D712N D723N D731N D732N D734N D743N D754N
+D023I D025I D026I D031I D032I D036I D043I D047I D051I D053I D054I D065I
+D071I D072I D073I D074I D114I D115I D116I D122I D125I D131I D132I D134I
+D143I D145I D152I D155I D156I D162I D165I D172I D174I D205I D212I D223I
+D225I D226I D243I D244I D245I D246I D251I D252I D255I D261I D263I D265I
+D266I D271I D274I D306I D311I D315I D325I D331I D332I D343I D346I D351I
+D356I D364I D365I D371I D411I D412I D413I D423I D431I D432I D445I D446I
+D452I D454I D455I D462I D464I D465I D466I D503I D506I D516I D523I D526I
+D532I D546I D565I D606I D612I D624I D627I D631I D632I D645I D654I D662I
+D664I D703I D712I D723I D731I D732I D734I D743I D754I
+''';
 }
 
 class ImportParser {
@@ -4104,7 +4128,7 @@ class VfoEditor extends StatelessWidget {
                     decoration: const InputDecoration(
                       border: OutlineInputBorder(),
                     ),
-                    items: ToneLibrary.ctcss
+                    items: ToneLibrary.choices
                         .map(
                           (tone) => DropdownMenuItem<String>(
                             value: tone,
@@ -4126,7 +4150,7 @@ class VfoEditor extends StatelessWidget {
                     decoration: const InputDecoration(
                       border: OutlineInputBorder(),
                     ),
-                    items: ToneLibrary.ctcss
+                    items: ToneLibrary.choices
                         .map(
                           (tone) => DropdownMenuItem<String>(
                             value: tone,
@@ -4611,6 +4635,12 @@ class ShxCodec {
   static Uint8List _encodeTone(String value) {
     final bytes = Uint8List(2);
     if (value.isEmpty || value == 'OFF') return bytes;
+    if (value.startsWith('D')) {
+      final index = ToneLibrary.dcs.indexOf(value);
+      bytes[0] = index >= 0 ? index + 1 : 0;
+      bytes[1] = 0;
+      return bytes;
+    }
     final numeric = int.tryParse(value.replaceAll('.', ''));
     if (numeric == null) return bytes;
     bytes[0] = numeric & 0xff;
@@ -4621,7 +4651,12 @@ class ShxCodec {
   static String _decodeTone(Uint8List payload, int offset) {
     final first = payload[offset];
     final second = payload[offset + 1];
-    if (second == 0) return 'OFF';
+    if (second == 0) {
+      if (first > 0 && first <= ToneLibrary.dcs.length) {
+        return ToneLibrary.dcs[first - 1];
+      }
+      return 'OFF';
+    }
     if (first != 0 && first != 0xff) {
       final text = ((second << 8) + first).toString();
       return '${text.substring(0, text.length - 1)}.${text.substring(text.length - 1)}';
