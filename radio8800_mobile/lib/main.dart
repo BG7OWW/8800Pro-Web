@@ -5,6 +5,7 @@ import 'dart:math';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_blue_plus/flutter_blue_plus.dart';
+import 'package:gbk_codec/gbk_codec.dart';
 import 'package:intl/intl.dart';
 import 'package:permission_handler/permission_handler.dart';
 import 'package:shared_preferences/shared_preferences.dart';
@@ -4826,10 +4827,15 @@ class ShxCodec {
 
   static Uint8List _encodeText(String input, int maxBytes, int fill) {
     final bytes = Uint8List(maxBytes)..fillRange(0, maxBytes, fill);
-    final encoded = ascii.encode(
-      input.trim().replaceAll(RegExp(r'[^\x20-\x7E]'), '?'),
-    );
-    bytes.setRange(0, min(maxBytes, encoded.length), encoded.take(maxBytes));
+    var cursor = 0;
+    for (final char in input.trim().characters) {
+      final encoded = _encodeRadioChar(char);
+      if (cursor + encoded.length > maxBytes) {
+        break;
+      }
+      bytes.setRange(cursor, cursor + encoded.length, encoded);
+      cursor += encoded.length;
+    }
     return bytes;
   }
 
@@ -4838,9 +4844,28 @@ class ShxCodec {
     for (var index = 0; index < maxBytes; index += 1) {
       final value = payload[offset + index];
       if (value == 0 || value == 0xff) break;
-      out.add(value >= 0x20 && value <= 0x7e ? value : 0x3f);
+      out.add(value);
     }
-    return ascii.decode(out, allowInvalid: true).trim();
+    if (out.isEmpty) return '';
+    try {
+      return gbk_bytes.decode(out).trim();
+    } catch (_) {
+      return utf8.decode(out, allowMalformed: true).trim();
+    }
+  }
+
+  static List<int> _encodeRadioChar(String char) {
+    if (char.isEmpty) return const [];
+    try {
+      final encoded = gbk_bytes.encode(char);
+      if (encoded.isNotEmpty &&
+          encoded.every((byte) => byte >= 0 && byte <= 0xff)) {
+        return encoded;
+      }
+    } catch (_) {
+      // Fall through to a protocol-safe replacement byte.
+    }
+    return const [0x3f];
   }
 
   static void _setChannelByFlatIndex(
