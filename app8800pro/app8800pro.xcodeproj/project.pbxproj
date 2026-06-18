@@ -125,9 +125,11 @@
 				TargetAttributes = {
 					AED421C12FE126D800992359 = {
 						CreatedOnToolsVersion = 26.5;
+						DevelopmentTeam = U464K5924C;
 					};
 					C0DE00000000000000000108 = {
 						CreatedOnToolsVersion = 26.5;
+						DevelopmentTeam = U464K5924C;
 						TestTargetID = AED421C12FE126D800992359;
 					};
 				};
