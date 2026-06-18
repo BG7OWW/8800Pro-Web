@@ -1134,12 +1134,6 @@
   grid-template-columns: minmax(0, 1fr) 390px;
 }
 
-.channel-page {
-  display: grid;
-  gap: 14px;
-  align-items: start;
-}
-
 .beginner-banner {
   display: grid;
   gap: 4px;
@@ -1323,6 +1317,7 @@
 }
 
 .repeater-panel.wide {
+  grid-column: 1 / -1;
   display: grid;
   gap: 14px;
 }

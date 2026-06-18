@@ -1,5 +1,5 @@
 import { DTMF_CHOICES } from '../constants/choices'
-import { SHX8800PRO, getShx8800ProBluetoothReadWriteAddresses, getShx8800ProReadWriteAddresses } from '../constants/memory-map'
+import { SHX8800PRO, getShx8800ProReadWriteAddresses } from '../constants/memory-map'
 import type { AppData, Channel, VfoInfos } from '../models/radio'
 import { createEmptyChannel } from '../models/radio'
 import {
@@ -176,15 +176,6 @@ export function applyBlockToAppData(data: AppData, address: number, frame: Uint8
   }
 }
 
-export function applyBluetoothBlockToAppData(data: AppData, address: number, frame: Uint8Array) {
-  const payload = frame.length === SHX8800PRO.bluetoothFrameBytes ? frame.slice(4) : frame
-  if (payload.length !== SHX8800PRO.bluetoothPayloadBytes) {
-    throw new Error(`蓝牙读回数据长度异常：0x${address.toString(16).toUpperCase()}`)
-  }
-  applyBlockToAppData(data, address, payload.slice(0, SHX8800PRO.framePayloadBytes))
-  applyBlockToAppData(data, address + SHX8800PRO.framePayloadBytes, payload.slice(SHX8800PRO.framePayloadBytes))
-}
-
 export function getWriteBlocks(data: AppData) {
   return getShx8800ProReadWriteAddresses().map((address) => ({
     address,
@@ -208,72 +199,6 @@ export function getBluetoothWriteBlocks(data: AppData) {
     .forEach((address) => blocks.push({ address, payload: encodeBlockForAddress(data, address) }))
 
   return blocks
-}
-
-export function getOfficialBluetoothWriteBlocks(data: AppData, baseline?: AppData) {
-  const allBlocks = getShx8800ProBluetoothReadWriteAddresses().map((address) => ({
-    address,
-    payload: encodeOfficialBluetoothPayload(data, address),
-  }))
-
-  if (!baseline || !canFastWriteOfficialBluetooth(data, baseline)) return allBlocks
-
-  const baselineBlocks = new Map(
-    getShx8800ProBluetoothReadWriteAddresses().map((address) => [address, encodeOfficialBluetoothPayload(baseline, address)]),
-  )
-  const changed = allBlocks.filter((block) => {
-    const before = baselineBlocks.get(block.address)
-    return !before || !sameBytes(before, block.payload)
-  })
-
-  return changed.length > 0 && changed.length <= 16 ? changed : allBlocks
-}
-
-function encodeOfficialBluetoothPayload(data: AppData, address: number) {
-  const payload = new Uint8Array(SHX8800PRO.bluetoothPayloadBytes)
-  payload.set(encodeBlockForAddress(data, address), 0)
-  payload.set(encodeBlockForAddress(data, address + SHX8800PRO.framePayloadBytes), SHX8800PRO.framePayloadBytes)
-  return payload
-}
-
-function canFastWriteOfficialBluetooth(data: AppData, baseline: AppData) {
-  if (!hasCompleteOfficialBluetoothSnapshot(data) || !hasCompleteOfficialBluetoothSnapshot(baseline)) return false
-  if (
-    JSON.stringify(data.bankNames) !== JSON.stringify(baseline.bankNames) ||
-    JSON.stringify(data.vfos) !== JSON.stringify(baseline.vfos) ||
-    JSON.stringify(data.functions) !== JSON.stringify(baseline.functions) ||
-    JSON.stringify(data.dtmf) !== JSON.stringify(baseline.dtmf) ||
-    JSON.stringify(data.fm) !== JSON.stringify(baseline.fm)
-  ) {
-    return false
-  }
-
-  let changedChannels = 0
-  for (let bankIndex = 0; bankIndex < data.channels.length; bankIndex += 1) {
-    for (let channelIndex = 0; channelIndex < data.channels[bankIndex].length; channelIndex += 1) {
-      if (JSON.stringify(data.channels[bankIndex][channelIndex]) !== JSON.stringify(baseline.channels[bankIndex]?.[channelIndex])) {
-        changedChannels += 1
-        if (changedChannels > 16) return false
-      }
-    }
-  }
-  return changedChannels > 0
-}
-
-function hasCompleteOfficialBluetoothSnapshot(data: AppData) {
-  return getShx8800ProBluetoothReadWriteAddresses().every((address) => {
-    const first = data.rawBlocks?.[toBlockKey(address)]
-    const second = data.rawBlocks?.[toBlockKey(address + SHX8800PRO.framePayloadBytes)]
-    return first?.length === SHX8800PRO.framePayloadBytes && second?.length === SHX8800PRO.framePayloadBytes
-  })
-}
-
-function sameBytes(left: Uint8Array, right: Uint8Array) {
-  if (left.length !== right.length) return false
-  for (let index = 0; index < left.length; index += 1) {
-    if (left[index] !== right[index]) return false
-  }
-  return true
 }
 
 function getBasePayload(data: AppData, address: number, fillValue = 0x00) {
@@ -431,9 +356,7 @@ function encodeVfo(vfo: VfoInfos, side: 'A' | 'B', base?: Uint8Array) {
   payload[14] =
     ((side === 'A' ? vfo.vfoADirection : vfo.vfoBDirection) << 4) |
     (side === 'A' ? vfo.vfoASignalGroup : vfo.vfoBSignalGroup)
-  payload[16] =
-    ((side === 'A' ? vfo.vfoAScramble : vfo.vfoBScramble) << 4) |
-    (side === 'A' ? vfo.vfoATxPower : vfo.vfoBTxPower)
+  payload[16] = side === 'A' ? vfo.vfoATxPower : vfo.vfoBTxPower
   payload[17] = (side === 'A' ? vfo.vfoABandwidth : vfo.vfoBBandwidth) << 6
   payload[19] = side === 'A' ? vfo.vfoAStep : vfo.vfoBStep
   payload.set(encodeOffset(side === 'A' ? vfo.vfoAOffset : vfo.vfoBOffset), 20)

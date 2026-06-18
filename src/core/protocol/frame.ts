@@ -5,7 +5,7 @@ export function asciiBytes(value: string) {
 }
 
 export function buildFrame(command: number, address: number, payload: Uint8Array, length = 64) {
-  const frame = new Uint8Array(4 + length)
+  const frame = new Uint8Array(68)
   frame[0] = command
   frame[1] = (address >> 8) & 0xff
   frame[2] = address & 0xff
@@ -18,16 +18,8 @@ export function buildReadFrame(address: number) {
   return new Uint8Array([0x52, (address >> 8) & 0xff, address & 0xff, 64])
 }
 
-export function buildBluetoothReadFrame(address: number) {
-  return new Uint8Array([0x52, (address >> 8) & 0xff, address & 0xff, 128])
-}
-
 export function buildWriteFrame(address: number, payload: Uint8Array) {
   return buildFrame(0x57, address, payload, 64)
-}
-
-export function buildBluetoothWriteFrame(address: number, payload: Uint8Array) {
-  return buildFrame(0x57, address, payload, 128)
 }
 
 export function hex(bytes: Uint8Array) {

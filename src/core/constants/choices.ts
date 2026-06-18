@@ -280,7 +280,6 @@ export const VFO_CHOICES = {
   step: ['2.5 KHz', '5.0 KHz', '6.25 KHz', '10.0 KHz', '12.5 KHz', '20.0 KHz', '25.0 KHz', '50.0 KHz'],
   direction: ['OFF', '+', '-'],
   pttid: ['无', '发射开始', '发射结束', '两者'],
-  scramble: ['关', '1', '2', '3', '4', '5', '6', '7', '8'],
 } as const
 
 export const FUNCTION_CHOICES = {

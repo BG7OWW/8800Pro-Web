@@ -2,9 +2,6 @@
 
 ## 2026-06-18
 
-- Switched Web Bluetooth read/write to the official APK-style `0x80` native block protocol while preserving a guarded fast-write path for small channel-only edits.
-- Added VFO scramble and PTT-ID controls based on fields already present in the 8800Pro memory map.
-- Fixed the repeater library layout so the expanded database no longer squeezes the channel editor.
 - Added the HamCQ repeater database to the web app as a lazy-loaded static data package.
 - Redesigned the channel-page repeater library into a full-width region/province/city browser with search, incremental loading, and one-click write preview.
 

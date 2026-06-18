@@ -6,8 +6,6 @@ export const SHX8800PRO = {
   channelBytes: 32,
   framePayloadBytes: 64,
   frameBytes: 68,
-  bluetoothPayloadBytes: 128,
-  bluetoothFrameBytes: 132,
   vfoAddress: 0x8000,
   functionAddress: 0x9000,
   dtmfStartAddress: 0xa000,
@@ -33,20 +31,6 @@ export function getShx8800ProReadWriteAddresses() {
     addresses.push(address)
   }
   addresses.push(0xa200, 0xa240, 0xb000)
-  return addresses
-}
-
-export function getShx8800ProBluetoothReadWriteAddresses() {
-  const addresses: number[] = []
-  for (let address = 0; address < 0x4000; address += SHX8800PRO.bluetoothPayloadBytes) {
-    addresses.push(address)
-  }
-  addresses.push(0x8000)
-  addresses.push(0x9000)
-  for (let address = 0xa000; address <= 0xa100; address += SHX8800PRO.bluetoothPayloadBytes) {
-    addresses.push(address)
-  }
-  addresses.push(0xa200, 0xb000)
   return addresses
 }
 

@@ -1,11 +1,11 @@
 import assert from 'node:assert/strict'
-import { applyBlockToAppData, encodeBlockForAddress, getBluetoothWriteBlocks, getOfficialBluetoothWriteBlocks } from '../src/core/codec/shx8800pro-codec'
+import { applyBlockToAppData, encodeBlockForAddress, getBluetoothWriteBlocks } from '../src/core/codec/shx8800pro-codec'
 import { encodeChannelFrequency, decodeChannelFrequency, encodeVfoFrequency, decodeVfoFrequency } from '../src/core/codec/frequency'
 import { encodeRadioText, decodeRadioText } from '../src/core/codec/text'
 import { encodeTone, decodeTone } from '../src/core/codec/tone'
 import { getShx8800ProReadWriteAddresses, SHX8800PRO } from '../src/core/constants/memory-map'
 import { cloneAppData, createDefaultAppData } from '../src/core/models/radio'
-import { buildBluetoothReadFrame, buildBluetoothWriteFrame, buildFrame, buildReadFrame, buildWriteFrame } from '../src/core/protocol/frame'
+import { buildFrame, buildReadFrame, buildWriteFrame } from '../src/core/protocol/frame'
 import { buildBootImagePackage, crc16Ccitt, Shx8800ProSession } from '../src/core/protocol/shx8800pro-session'
 import type { RadioTransport } from '../src/transport/transport'
 
@@ -113,14 +113,10 @@ assert.equal(newChannelWithoutRawBlock[13], 3)
 const vfoSource = createDefaultAppData()
 vfoSource.vfos.vfoAFreq = '145.50000'
 vfoSource.vfos.vfoBFreq = '440.62500'
-vfoSource.vfos.vfoAScramble = 3
-vfoSource.vfos.vfoBScramble = 5
 const vfoTarget = createDefaultAppData()
 applyBlockToAppData(vfoTarget, SHX8800PRO.vfoAddress, encodeBlockForAddress(vfoSource, SHX8800PRO.vfoAddress))
 assert.equal(vfoTarget.vfos.vfoAFreq, '145.50000')
 assert.equal(vfoTarget.vfos.vfoBFreq, '440.62500')
-assert.equal(vfoTarget.vfos.vfoAScramble, 3)
-assert.equal(vfoTarget.vfos.vfoBScramble, 5)
 
 const functionTarget = createDefaultAppData()
 const functionSource = createDefaultAppData()
@@ -131,15 +127,10 @@ assert.equal(functionTarget.functions.callSign, 'N0CALL')
 assert.equal(functionTarget.functions.bluetoothAudioGain, 4)
 
 assert.deepEqual(Array.from(buildReadFrame(0x9000)), [0x52, 0x90, 0x00, 0x40])
-assert.deepEqual(Array.from(buildBluetoothReadFrame(0x9000)), [0x52, 0x90, 0x00, 0x80])
 const writeFrame = buildWriteFrame(0x9000, new Uint8Array(64).fill(0xaa))
 assert.equal(writeFrame.length, 68)
 assert.equal(writeFrame[0], 0x57)
 assert.equal(writeFrame[3], 0x40)
-const bluetoothWriteFrame = buildBluetoothWriteFrame(0x9000, new Uint8Array(128).fill(0xaa))
-assert.equal(bluetoothWriteFrame.length, 132)
-assert.equal(bluetoothWriteFrame[0], 0x57)
-assert.equal(bluetoothWriteFrame[3], 0x80)
 
 const bootPacket = buildBootImagePackage(0x02, 0, new TextEncoder().encode('PROGRAM'))
 assert.equal(bootPacket[0], 0xa5)
@@ -204,6 +195,8 @@ class BluetoothWriteTransport implements RadioTransport {
   readonly configs: Array<{ packetSize?: number; writeMode?: 'with-response' | 'without-response'; interChunkDelayMs?: number }> = []
   ackReads = 0
   private queue: number[] = []
+  private writeFrameCount = 0
+  private channelPayloadsPending = 0
 
   async open() {}
   async close() {}
@@ -225,8 +218,19 @@ class BluetoothWriteTransport implements RadioTransport {
       this.queue.push(...Array.from(new Uint8Array([0x01, 0x36, 0x01, 0x74, 0x04, 0x00, 0x05, 0x20, 0x02, 0x00, 0x02, 0x60, 0x00, 0x03, 0x50, 0x04])))
       return
     }
-    if (data.length === SHX8800PRO.bluetoothFrameBytes && data[0] === 0x57 && data[3] === 0x80) {
-      this.queue.push(0x06)
+    if (data.length === 4 && data[0] === 0x57 && data[3] === 0x40) {
+      this.channelPayloadsPending = 2
+      return
+    }
+    if (this.channelPayloadsPending > 0 && data.length === SHX8800PRO.framePayloadBytes) {
+      this.channelPayloadsPending -= 1
+      if (this.channelPayloadsPending === 0) this.queue.push(0x06)
+      return
+    }
+    if (data.length === SHX8800PRO.frameBytes && data[0] === 0x57) {
+      this.writeFrameCount += 1
+      const address = (data[1] << 8) | data[2]
+      if (this.writeFrameCount % 2 === 0 || address === SHX8800PRO.fmAddress) this.queue.push(0x06)
       return
     }
     if (data.length === 1 && data[0] === 0x45) this.queue.push(0x06)
@@ -259,18 +263,20 @@ const bleBlocks = getBluetoothWriteBlocks(bluetoothWriteData)
 assert.equal(bleBlocks.some((block) => block.address === 0), true)
 assert.equal(bleBlocks.some((block) => block.address === 0x40), true)
 await new Shx8800ProSession(bluetoothWriteTransport, { bluetoothWritePairDelayMs: 0, bluetoothAckSettleMs: 0 }).writeRadio(bluetoothWriteData)
-const channelHeaderIndex = bluetoothWriteTransport.writes.findIndex((write) => write.length === SHX8800PRO.bluetoothFrameBytes && write[0] === 0x57)
+const channelHeaderIndex = bluetoothWriteTransport.writes.findIndex((write) => write.length === 4 && write[0] === 0x57)
 assert.ok(channelHeaderIndex >= 0)
-assert.deepEqual(Array.from(bluetoothWriteTransport.writes[channelHeaderIndex].slice(0, 4)), [0x57, 0x00, 0x00, 0x80])
-assert.deepEqual(Array.from(bluetoothWriteTransport.writes[channelHeaderIndex].slice(36, 68)), Array.from(new Uint8Array(32).fill(0xff)))
-assert.deepEqual(Array.from(bluetoothWriteTransport.writes[channelHeaderIndex].slice(68, 132)), Array.from(new Uint8Array(64).fill(0xff)))
-const officialWrites = bluetoothWriteTransport.writes.filter((write) => write.length === SHX8800PRO.bluetoothFrameBytes && write[0] === 0x57)
-assert.deepEqual(officialWrites.map((write) => (write[1] << 8) | write[2]), getOfficialBluetoothWriteBlocks(bluetoothWriteData).map((block) => block.address))
-const bankNameHeaderIndex = bluetoothWriteTransport.writes.findIndex((write) => write.length === SHX8800PRO.bluetoothFrameBytes && write[0] === 0x57 && write[1] === 0xa2 && write[2] === 0x00)
+assert.deepEqual(Array.from(bluetoothWriteTransport.writes[channelHeaderIndex]), [0x57, 0x00, 0x00, 0x40])
+assert.deepEqual(Array.from(bluetoothWriteTransport.writes[channelHeaderIndex + 1].slice(32, 64)), Array.from(new Uint8Array(32).fill(0xff)))
+assert.deepEqual(Array.from(bluetoothWriteTransport.writes[channelHeaderIndex + 2]), Array.from(new Uint8Array(64).fill(0xff)))
+const streamHeaders = bluetoothWriteTransport.writes.filter((write) => write.length === 4 && write[0] === 0x57)
+assert.deepEqual(streamHeaders.map((write) => (write[1] << 8) | write[2]), [0x0000, 0xa000, 0xa080, 0xa200])
+const configWrites = bluetoothWriteTransport.writes.filter((write) => write.length === SHX8800PRO.frameBytes && write[0] === 0x57)
+assert.deepEqual(configWrites.map((write) => (write[1] << 8) | write[2]), [0x8000, 0x9000, 0xa100, 0xb000])
+const bankNameHeaderIndex = bluetoothWriteTransport.writes.findIndex((write) => write.length === 4 && write[0] === 0x57 && write[1] === 0xa2 && write[2] === 0x00)
 assert.ok(bankNameHeaderIndex >= 0)
-assert.deepEqual(Array.from(bluetoothWriteTransport.writes[bankNameHeaderIndex].slice(4, 68)), Array.from(encodeBlockForAddress(bluetoothWriteData, 0xa200)))
-assert.deepEqual(Array.from(bluetoothWriteTransport.writes[bankNameHeaderIndex].slice(68, 132)), Array.from(encodeBlockForAddress(bluetoothWriteData, 0xa240)))
-assert.equal(bluetoothWriteTransport.ackReads, 1 + getOfficialBluetoothWriteBlocks(bluetoothWriteData).length)
+assert.deepEqual(Array.from(bluetoothWriteTransport.writes[bankNameHeaderIndex + 1]), Array.from(encodeBlockForAddress(bluetoothWriteData, 0xa200)))
+assert.deepEqual(Array.from(bluetoothWriteTransport.writes[bankNameHeaderIndex + 2]), Array.from(encodeBlockForAddress(bluetoothWriteData, 0xa240)))
+assert.equal(bluetoothWriteTransport.ackReads, 1 + Math.ceil(bleBlocks.length / 2))
 
 const rawChannelData = createDefaultAppData()
 const rawChannelBlock = new Uint8Array(64).fill(0xaa)
