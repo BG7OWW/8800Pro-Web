@@ -1831,7 +1831,7 @@ class MobileStore extends ChangeNotifier {
   LinkState linkState = const LinkState.disconnected();
   NoticeMessage? notice;
   AppUIMode uiMode = AppUIMode.basic;
-  int selectedBankIndex = 1;
+  int selectedBankIndex = 0;
   int selectedChannelIndex = 0;
   String importSourceText = '';
   String channelSearchText = '';
@@ -1875,7 +1875,6 @@ class MobileStore extends ChangeNotifier {
   String get currentBankName => data.bankNames[selectedBankIndex];
 
   Future<void> initialize() async {
-    _seedChannels();
     await _loadBackups();
     _log('应用已初始化');
     notifyListeners();
@@ -2664,24 +2663,6 @@ class MobileStore extends ChangeNotifier {
     final preferences = await SharedPreferences.getInstance();
     final raw = jsonEncode(backups.map((item) => item.toJson()).toList());
     await preferences.setString(backupKey, raw);
-  }
-
-  void _seedChannels() {
-    data.bankNames[1] = '中继台';
-    for (var index = 0; index < DemoData.repeaters.length; index += 1) {
-      final repeater = DemoData.repeaters[index];
-      data.channels[1][index] = Channel(
-        id: index + 1,
-        rxFreq: repeater.rxFreq,
-        txFreq: _offsetFrequency(repeater.rxFreq, repeater.offset),
-        rxTone: repeater.toneText.toUpperCase().contains('TSQ')
-            ? _normalizeTone(repeater.toneText)
-            : 'OFF',
-        txTone: _normalizeTone(repeater.toneText),
-        name: repeater.displayName.characters.take(12).toString(),
-        visible: true,
-      );
-    }
   }
 
   void _success(String text) {

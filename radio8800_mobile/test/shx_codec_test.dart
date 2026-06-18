@@ -2,6 +2,13 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:radio8800_mobile/main.dart';
 
 void main() {
+  test('starts with an empty codeplug by default', () {
+    final data = RadioAppData.defaults();
+
+    expect(data.visibleChannelCount, 0);
+    expect(data.hasBackupContent, isFalse);
+  });
+
   test('preserves Chinese channel and bank names in radio text fields', () {
     final data = RadioAppData.defaults();
     data.channels[0][0] = Channel(
