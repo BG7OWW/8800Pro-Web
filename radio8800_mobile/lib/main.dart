@@ -256,6 +256,8 @@ class OverviewPage extends StatelessWidget {
                 ),
               ),
               const SizedBox(height: 16),
+              ChannelManagementPanel(store: store),
+              const SizedBox(height: 16),
               PanelCard(
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
@@ -789,6 +791,96 @@ class ChannelsPage extends StatelessWidget {
           ),
         ),
       ],
+    );
+  }
+}
+
+class ChannelManagementPanel extends StatelessWidget {
+  const ChannelManagementPanel({super.key, required this.store});
+
+  final MobileStore store;
+
+  @override
+  Widget build(BuildContext context) {
+    return PanelCard(
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const SectionHeader(
+            title: '信道管理',
+            subtitle: '可以新建、复制、剪切、粘贴、插入、删除并整理当前区域。',
+          ),
+          const SizedBox(height: 12),
+          Row(
+            children: [
+              Expanded(
+                child: ActionButton(
+                  label: '新建',
+                  icon: Icons.add_circle_outline_rounded,
+                  primary: true,
+                  onPressed: store.prepareNewChannelInCurrentBank,
+                ),
+              ),
+              const SizedBox(width: 10),
+              Expanded(
+                child: ActionButton(
+                  label: '整理区域',
+                  icon: Icons.cleaning_services_rounded,
+                  onPressed: store.compactCurrentBank,
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 10),
+          Row(
+            children: [
+              Expanded(
+                child: ActionButton(
+                  label: '复制',
+                  icon: Icons.content_copy_rounded,
+                  onPressed: store.copyCurrentChannel,
+                ),
+              ),
+              const SizedBox(width: 10),
+              Expanded(
+                child: ActionButton(
+                  label: '剪切',
+                  icon: Icons.content_cut_rounded,
+                  onPressed: store.cutCurrentChannel,
+                ),
+              ),
+              const SizedBox(width: 10),
+              Expanded(
+                child: ActionButton(
+                  label: '粘贴',
+                  icon: Icons.content_paste_rounded,
+                  onPressed: store.pasteToCurrentChannel,
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 10),
+          Row(
+            children: [
+              Expanded(
+                child: ActionButton(
+                  label: '插入空信道',
+                  icon: Icons.playlist_add_rounded,
+                  onPressed: store.insertEmptyChannelAfterSelection,
+                ),
+              ),
+              const SizedBox(width: 10),
+              Expanded(
+                child: ActionButton(
+                  label: '删除上移',
+                  icon: Icons.delete_sweep_rounded,
+                  onPressed: store.deleteCurrentChannelAndShift,
+                ),
+              ),
+            ],
+          ),
+        ],
+      ),
     );
   }
 }
@@ -1841,6 +1933,7 @@ class MobileStore extends ChangeNotifier {
   String lastOperation = '尚未开始读写';
   double? transferProgressValue;
   String transferProgressTitle = '';
+  Channel? _copiedChannel;
 
   BluetoothDevice? _device;
   BluetoothCharacteristic? _characteristic;
@@ -1924,7 +2017,101 @@ class MobileStore extends ChangeNotifier {
     data.channels[selectedBankIndex][selectedChannelIndex] = Channel.empty(
       currentChannel.id,
     );
+    data.updatedAt = DateTime.now();
     _success('已清空 CH-${currentChannel.id}');
+  }
+
+  void copyCurrentChannel() {
+    _copiedChannel = currentChannel.copy();
+    _success('已复制 CH-${currentChannel.id}');
+  }
+
+  void cutCurrentChannel() {
+    _copiedChannel = currentChannel.copy();
+    data.channels[selectedBankIndex][selectedChannelIndex] = Channel.empty(
+      currentChannel.id,
+    );
+    data.updatedAt = DateTime.now();
+    _success('已剪切 CH-${currentChannel.id}');
+  }
+
+  void pasteToCurrentChannel() {
+    final copied = _copiedChannel;
+    if (copied == null) {
+      _warning('剪贴板里还没有信道');
+      return;
+    }
+    data.channels[selectedBankIndex][selectedChannelIndex] = copied.copy()
+      ..id = currentChannel.id;
+    data.updatedAt = DateTime.now();
+    _success('已粘贴到 CH-${currentChannel.id}');
+  }
+
+  void prepareNewChannelInCurrentBank() {
+    final emptyIndex = currentBank.indexWhere(
+      (channel) => !channel.visible || channel.rxFreq.trim().isEmpty,
+    );
+    if (emptyIndex < 0) {
+      _warning('当前区域已满，请先清空一个信道或切换区域');
+      return;
+    }
+    data.channels[selectedBankIndex][emptyIndex] = Channel.empty(
+      emptyIndex + 1,
+    );
+    selectedChannelIndex = emptyIndex;
+    channelSearchText = '';
+    showEmptyChannels = true;
+    data.updatedAt = DateTime.now();
+    _success('已定位到 CH-${emptyIndex + 1}，填写接收频率后会参与写频');
+  }
+
+  void insertEmptyChannelAfterSelection() {
+    var bank = List<Channel>.from(currentBank);
+    final insertIndex = min(selectedChannelIndex + 1, bank.length - 1);
+    bank.insert(insertIndex, Channel.empty(insertIndex + 1));
+    bank = bank.take(64).toList();
+    _renumber(bank);
+    data.channels[selectedBankIndex] = bank;
+    selectedChannelIndex = insertIndex;
+    data.updatedAt = DateTime.now();
+    _success('已插入空信道');
+  }
+
+  void deleteCurrentChannelAndShift() {
+    final bank = List<Channel>.from(currentBank);
+    if (!bank.asMap().containsKey(selectedChannelIndex)) {
+      return;
+    }
+    bank.removeAt(selectedChannelIndex);
+    bank.add(Channel.empty(64));
+    _renumber(bank);
+    data.channels[selectedBankIndex] = bank;
+    selectedChannelIndex = min(selectedChannelIndex, bank.length - 1);
+    data.updatedAt = DateTime.now();
+    _success('已删除并上移后续信道');
+  }
+
+  void compactCurrentBank() {
+    final active = currentBank
+        .where((channel) => channel.visible && channel.rxFreq.trim().isNotEmpty)
+        .map((channel) => channel.copy())
+        .toList();
+    final emptyCount = max(0, 64 - active.length);
+    active.addAll(
+      List.generate(emptyCount, (index) => Channel.empty(active.length + 1)),
+    );
+    _renumber(active);
+    data.channels[selectedBankIndex] = active;
+    selectedChannelIndex = min(selectedChannelIndex, active.length - 1);
+    data.updatedAt = DateTime.now();
+    _success('已整理当前区域，空信道移动到末尾');
+  }
+
+  void _renumber(List<Channel> channels) {
+    for (var index = 0; index < channels.length; index += 1) {
+      channels[index].id = index + 1;
+      channels[index].visible = channels[index].rxFreq.trim().isNotEmpty;
+    }
   }
 
   void updateFunction(void Function(RadioFunctionSettings settings) change) {
@@ -2783,7 +2970,7 @@ class Channel {
     this.visible = false,
   });
 
-  final int id;
+  int id;
   String rxFreq;
   String rxTone;
   String txFreq;
@@ -3665,7 +3852,7 @@ class ActionButton extends StatelessWidget {
         ),
         onPressed: onPressed,
         icon: Icon(icon, size: 18),
-        label: Text(label),
+        label: Text(label, maxLines: 1, overflow: TextOverflow.ellipsis),
       ),
     );
   }

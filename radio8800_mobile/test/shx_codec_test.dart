@@ -87,4 +87,81 @@ void main() {
     expect(data.hasBackupContent, isTrue);
     expect(data.backupSignature, before);
   });
+
+  test('copies and pastes channels while keeping target id', () {
+    final store = MobileStore();
+    store.data.channels[0][0] = Channel(
+      id: 1,
+      rxFreq: '439.46250',
+      txFreq: '434.46250',
+      name: '梧桐山',
+      visible: true,
+    );
+
+    store.selectChannel(1);
+    store.copyCurrentChannel();
+    store.selectChannel(2);
+    store.pasteToCurrentChannel();
+
+    expect(store.data.channels[0][1].id, 2);
+    expect(store.data.channels[0][1].rxFreq, '439.46250');
+    expect(store.data.channels[0][1].name, '梧桐山');
+  });
+
+  test('deletes a channel and shifts following channels up', () {
+    final store = MobileStore();
+    store.data.channels[0][0] = Channel(
+      id: 1,
+      rxFreq: '430.00000',
+      visible: true,
+    );
+    store.data.channels[0][1] = Channel(
+      id: 2,
+      rxFreq: '431.00000',
+      visible: true,
+    );
+    store.data.channels[0][2] = Channel(
+      id: 3,
+      rxFreq: '432.00000',
+      visible: true,
+    );
+
+    store.selectChannel(2);
+    store.deleteCurrentChannelAndShift();
+
+    expect(store.data.channels[0][0].id, 1);
+    expect(store.data.channels[0][1].id, 2);
+    expect(store.data.channels[0][1].rxFreq, '432.00000');
+    expect(store.data.channels[0].last.id, 64);
+    expect(store.data.channels[0].last.visible, isFalse);
+  });
+
+  test('compacts active channels to the front of the selected bank', () {
+    final store = MobileStore();
+    store.data.channels[0][0] = Channel(
+      id: 1,
+      rxFreq: '430.00000',
+      visible: true,
+    );
+    store.data.channels[0][3] = Channel(
+      id: 4,
+      rxFreq: '433.00000',
+      visible: true,
+    );
+    store.data.channels[0][7] = Channel(
+      id: 8,
+      rxFreq: '437.00000',
+      visible: true,
+    );
+
+    store.compactCurrentBank();
+
+    expect(store.data.channels[0][0].id, 1);
+    expect(store.data.channels[0][0].rxFreq, '430.00000');
+    expect(store.data.channels[0][1].id, 2);
+    expect(store.data.channels[0][1].rxFreq, '433.00000');
+    expect(store.data.channels[0][2].id, 3);
+    expect(store.data.channels[0][2].rxFreq, '437.00000');
+    expect(store.data.channels[0][3].visible, isFalse);
+  });
 }
