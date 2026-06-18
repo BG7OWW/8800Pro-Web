@@ -123,7 +123,6 @@ function App() {
     if (mode === 'simple' && !['dashboard', 'channels', 'settings', 'files', 'guide', 'debug'].includes(activeView)) {
       setActiveView('dashboard')
     }
-    setMobileNavOpen(false)
   }
 
   function switchView(view: ViewId) {
@@ -373,15 +372,40 @@ function App() {
       {mobileNavOpen ? <button type="button" className="mobile-nav-scrim" aria-label="关闭导航" onClick={() => setMobileNavOpen(false)} /> : null}
       <aside className={`sidebar ${mobileNavOpen ? 'open' : ''}`}>
         <div className="brand">
+          <button
+            type="button"
+            className="sidebar-rail-toggle"
+            onClick={() => setSidebarCollapsed(false)}
+            title="展开菜单栏"
+            aria-label="展开菜单栏"
+          >
+            <PanelLeftOpen size={18} />
+          </button>
           <div className="brand-mark">
             <img src={hamLogo} alt="8800Pro Web logo" />
           </div>
           <div className="brand-copy">
             <strong>8800Pro Web</strong>
-            <span>网页对讲机控制系统</span>
           </div>
+          <button
+            type="button"
+            className="sidebar-collapse-button"
+            onClick={() => setSidebarCollapsed(true)}
+            title="收起菜单栏"
+            aria-label="收起菜单栏"
+          >
+            <PanelLeftClose size={18} />
+          </button>
           <button type="button" className="mobile-nav-close" onClick={() => setMobileNavOpen(false)} aria-label="关闭导航">
             <X size={18} />
+          </button>
+        </div>
+        <div className="collapsed-mode-switch" role="tablist" aria-label="界面模式">
+          <button type="button" className={uiMode === 'simple' ? 'active' : ''} onClick={() => switchUiMode('simple')} title="基础模式" aria-label="基础模式">
+            <ListChecks size={17} />
+          </button>
+          <button type="button" className={uiMode === 'pro' ? 'active' : ''} onClick={() => switchUiMode('pro')} title="高级模式" aria-label="高级模式">
+            <SlidersHorizontal size={17} />
           </button>
         </div>
         <div className="mode-switch" role="tablist" aria-label="界面模式">
@@ -434,21 +458,6 @@ function App() {
       <main className="workspace">
         <header className="topbar">
           <div className="topbar-title">
-            <div className="topbar-controls">
-              <button type="button" className="icon-button topbar-icon" onClick={() => setSidebarCollapsed((current) => !current)} title={sidebarCollapsed ? '展开菜单栏' : '收起菜单栏'}>
-                {sidebarCollapsed ? <PanelLeftOpen size={18} /> : <PanelLeftClose size={18} />}
-              </button>
-              <div className="mode-switch top-mode-switch" role="tablist" aria-label="界面模式">
-                <button type="button" className={uiMode === 'simple' ? 'active' : ''} onClick={() => switchUiMode('simple')} title="基础模式">
-                  <ListChecks size={16} />
-                  <span>基础</span>
-                </button>
-                <button type="button" className={uiMode === 'pro' ? 'active' : ''} onClick={() => switchUiMode('pro')} title="高级模式">
-                  <SlidersHorizontal size={16} />
-                  <span>高级</span>
-                </button>
-              </div>
-            </div>
             <h1>{viewTitles[activeView]}</h1>
             <p>网页多功能控制台</p>
           </div>
@@ -589,7 +598,7 @@ function ConnectionGate({
             <span>{stats.serialSupported ? '适合首次备份和稳定写入' : '当前浏览器不支持 Web Serial'}</span>
           </button>
         </div>
-        <p className="connection-compat">移动端连接请使用 Android Chrome / Edge。iOS / iPadOS 版浏览器目前不提供本项目需要的 Web Bluetooth GATT 或 Web Serial API，可以浏览、编辑和导入导出配置，但不能直接连接 8800Pro。</p>
+        <p className="connection-compat">移动端直连请使用 Android Chrome / Edge。iOS / iPadOS 的 Safari、Chrome、Edge 等普通浏览器目前不提供本项目需要的 Web Bluetooth GATT 或 Web Serial API，可以浏览、编辑和导入导出配置；专用 BLE 浏览器或原生桥接属于实验路线。</p>
         {notice ? <OperationNotice tone={notice.tone} text={notice.text} /> : null}
         {reconnectAttempt > 0 ? <p className="connection-footnote">正在自动重连：{reconnectAttempt}/3</p> : null}
         <footer className="connection-footer">

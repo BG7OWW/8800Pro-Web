@@ -34,11 +34,13 @@ final class BleMemoryTransfer: NSObject, CBCentralManagerDelegate, CBPeripheralD
   private var started = false
   private let splitWrite: Bool
   private let streamPairWrite: Bool
+  private let targetName: String
 
-  init(mode: TransferMode, splitWrite: Bool, streamPairWrite: Bool) {
+  init(mode: TransferMode, splitWrite: Bool, streamPairWrite: Bool, targetName: String) {
     self.mode = mode
     self.splitWrite = splitWrite
     self.streamPairWrite = streamPairWrite
+    self.targetName = targetName
     super.init()
     central = CBCentralManager(delegate: self, queue: .main)
     timer = Timer.scheduledTimer(withTimeInterval: 240, repeats: false) { _ in
@@ -56,7 +58,7 @@ final class BleMemoryTransfer: NSObject, CBCentralManagerDelegate, CBPeripheralD
   func centralManager(_ central: CBCentralManager, didDiscover peripheral: CBPeripheral, advertisementData: [String: Any], rssi RSSI: NSNumber) {
     let name = peripheral.name ?? advertisementData[CBAdvertisementDataLocalNameKey] as? String ?? ""
     print("found \(name) \(peripheral.identifier) RSSI \(RSSI)")
-    guard name.localizedCaseInsensitiveContains("walkie") || name.localizedCaseInsensitiveContains("air") else { return }
+    guard targetName.isEmpty || name.localizedCaseInsensitiveContains(targetName) else { return }
     self.peripheral = peripheral
     central.stopScan()
     peripheral.delegate = self
@@ -260,7 +262,8 @@ final class BleMemoryTransfer: NSObject, CBCentralManagerDelegate, CBPeripheralD
   private func loadWritePlan(_ path: String) {
     do {
       let data = try Data(contentsOf: URL(fileURLWithPath: path))
-      writeFrames = try JSONDecoder().decode(MemoryFile.self, from: data).frames
+      let frames = try JSONDecoder().decode(MemoryFile.self, from: data).frames
+      writeFrames = streamPairWrite ? groupBluetoothWriteFrames(frames) : frames
       if writeFrames.count % 2 != 0 {
         print("PLAN_ERROR odd frame count \(writeFrames.count)")
         finish()
@@ -339,6 +342,44 @@ func isoNow() -> String {
   ISO8601DateFormatter().string(from: Date())
 }
 
+func groupBluetoothWriteFrames(_ frames: [MemoryFrame]) -> [MemoryFrame] {
+  let pairStride = 0x40
+  let byAddress = Dictionary(uniqueKeysWithValues: frames.map { ($0.address, $0) })
+  var used = Set<Int>()
+  var grouped: [MemoryFrame] = []
+
+  for first in frames {
+    if used.contains(first.address) { continue }
+
+    if let streamSecond = byAddress[first.address + pairStride], !used.contains(streamSecond.address) {
+      grouped.append(first)
+      grouped.append(streamSecond)
+      used.insert(first.address)
+      used.insert(streamSecond.address)
+      continue
+    }
+
+    let fallback = frames.first { candidate in
+      if candidate.address == first.address || used.contains(candidate.address) { return false }
+      return byAddress[candidate.address - pairStride] == nil && byAddress[candidate.address + pairStride] == nil
+    } ?? frames.first { candidate in
+      candidate.address != first.address && !used.contains(candidate.address)
+    }
+
+    guard let fallback else {
+      grouped.append(first)
+      used.insert(first.address)
+      continue
+    }
+    grouped.append(first)
+    grouped.append(fallback)
+    used.insert(first.address)
+    used.insert(fallback.address)
+  }
+
+  return grouped
+}
+
 let readAddresses: [Int] = {
   var values = stride(from: 0, to: 0x4000, by: 64).map { $0 }
   values.append(0x8000)
@@ -355,11 +396,18 @@ if let dumpIndex = args.firstIndex(of: "--dump"), dumpIndex + 1 < args.count {
 } else if let writeIndex = args.firstIndex(of: "--write"), writeIndex + 1 < args.count {
   mode = .write(args[writeIndex + 1], verify: args.contains("--verify"))
 } else {
-  print("usage: swift tools/ble-memory-transfer.swift --dump <dump.json> | --write <plan.json> [--verify]")
+  print("usage: swift tools/ble-memory-transfer.swift --dump <dump.json> | --write <plan.json> [--verify] [--name walkie]")
   exit(2)
 }
 
-let transfer = BleMemoryTransfer(mode: mode, splitWrite: args.contains("--split"), streamPairWrite: args.contains("--stream-pair"))
+let targetName: String = {
+  if let nameIndex = args.firstIndex(of: "--name"), nameIndex + 1 < args.count {
+    return args[nameIndex + 1]
+  }
+  return "walkie"
+}()
+
+let transfer = BleMemoryTransfer(mode: mode, splitWrite: args.contains("--split"), streamPairWrite: args.contains("--stream-pair"), targetName: targetName)
 withExtendedLifetime(transfer) {
   CFRunLoopRun()
 }
