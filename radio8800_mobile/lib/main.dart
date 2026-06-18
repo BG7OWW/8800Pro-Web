@@ -1965,34 +1965,77 @@ class MobileStore extends ChangeNotifier {
       return;
     }
 
+    try {
+      _log('开始按 FFE0 服务扫描 8800Pro BLE 设备');
+      var device = await _scanForRadio(
+        filterByService: true,
+        timeout: const Duration(seconds: 8),
+      );
+      if (device == null) {
+        _log('按服务扫描超时，改用名称扫描');
+        progressNote = '正在按名称扫描设备';
+        notifyListeners();
+        device = await _scanForRadio(
+          filterByService: false,
+          timeout: const Duration(seconds: 10),
+        );
+      }
+      if (device == null) {
+        _warning('扫描超时，请确认对讲机蓝牙已开启并靠近手机');
+        return;
+      }
+      await _connectToDevice(device);
+    } catch (error) {
+      _warning('扫描失败：$error');
+    }
+  }
+
+  Future<BluetoothDevice?> _scanForRadio({
+    required bool filterByService,
+    required Duration timeout,
+  }) async {
     await _scanSub?.cancel();
     await FlutterBluePlus.stopScan();
-    _log('开始扫描 8800Pro BLE 设备');
 
-    final completer = Completer<void>();
-    _scanSub = FlutterBluePlus.scanResults.listen((results) async {
+    final completer = Completer<BluetoothDevice?>();
+    _scanSub = FlutterBluePlus.scanResults.listen((results) {
       for (final result in results) {
-        final name = result.device.platformName.toLowerCase();
-        if (name.contains('walkie') || name.contains('8800')) {
-          if (!completer.isCompleted) {
-            completer.complete();
-            await FlutterBluePlus.stopScan();
-            await _connectToDevice(result.device);
-          }
+        if (_matchesRadio(result) && !completer.isCompleted) {
+          completer.complete(result.device);
           break;
         }
       }
     });
 
     try {
-      await FlutterBluePlus.startScan(
-        timeout: const Duration(seconds: 8),
-        withServices: [Guid(bleService)],
+      if (filterByService) {
+        await FlutterBluePlus.startScan(
+          timeout: timeout,
+          withServices: [Guid(bleService)],
+        );
+      } else {
+        await FlutterBluePlus.startScan(timeout: timeout);
+      }
+      return await completer.future.timeout(
+        timeout + const Duration(seconds: 1),
+        onTimeout: () => null,
       );
-      await completer.future.timeout(const Duration(seconds: 9));
-    } catch (_) {
-      _warning('扫描超时，请确认对讲机蓝牙已开启');
+    } finally {
+      await FlutterBluePlus.stopScan();
+      await _scanSub?.cancel();
+      _scanSub = null;
     }
+  }
+
+  bool _matchesRadio(ScanResult result) {
+    final name = [
+      result.device.platformName,
+      result.advertisementData.advName,
+      result.device.advName,
+    ].join(' ').toLowerCase();
+    return name.contains('walkie') ||
+        name.contains('8800') ||
+        name.contains('shx');
   }
 
   Future<bool> _ensureBluetoothPermissions() async {
@@ -2056,10 +2099,9 @@ class MobileStore extends ChangeNotifier {
       final services = await device.discoverServices();
       BluetoothCharacteristic? characteristic;
       for (final service in services) {
-        if (service.uuid.toString().toUpperCase() == bleService.toUpperCase()) {
+        if (_matchesUuid(service.uuid, bleService)) {
           for (final item in service.characteristics) {
-            if (item.uuid.toString().toUpperCase() ==
-                bleCharacteristic.toUpperCase()) {
+            if (_matchesUuid(item.uuid, bleCharacteristic)) {
               characteristic = item;
               break;
             }
@@ -2094,6 +2136,23 @@ class MobileStore extends ChangeNotifier {
       _warning('蓝牙连接失败：$error');
     }
   }
+
+  bool _matchesUuid(Guid uuid, String expected) {
+    final current = _canonicalUuid(uuid.toString());
+    final target = _canonicalUuid(expected);
+    if (current == target) return true;
+    if (current.length == 4 && target.startsWith('0000$current')) return true;
+    if (target.length == 4 && current.startsWith('0000$target')) return true;
+    return current.endsWith(target) || target.endsWith(current);
+  }
+
+  String _canonicalUuid(String value) => value
+      .toLowerCase()
+      .replaceAll('-', '')
+      .replaceFirst(
+        RegExp(r'^0000([0-9a-f]{4})00001000800000805f9b34fb$'),
+        r'$1',
+      );
 
   Future<void> disconnect() async {
     await _notifySub?.cancel();
